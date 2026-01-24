@@ -1,13 +1,13 @@
-package io.backend.challenge;
+package io.backend.notifications;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class BackendChallengeApplication {
+public class NotificationApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(BackendChallengeApplication.class, args);
+		SpringApplication.run(NotificationApplication.class, args);
 	}
 
 }
