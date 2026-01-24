@@ -1,5 +1,7 @@
 package io.backend.notifications.modules.auth.controller;
 
+import java.util.Optional;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,9 +20,15 @@ public class UserController {
         this.userRepository = userRepository;
     }
 
-    @GetMapping
-
+    @GetMapping("/{id}")
     private ResponseEntity<User> findById(Long id) {
-        return ResponseEntity.ok(userRepository.findById(id).orElseThrow());
+        Optional<User> userOptional = userRepository.findById(id);
+
+        if (userOptional.isPresent()) {
+            return ResponseEntity.ok(userOptional.get());
+        }
+
+        return ResponseEntity.notFound().build();
     }
+
 }
