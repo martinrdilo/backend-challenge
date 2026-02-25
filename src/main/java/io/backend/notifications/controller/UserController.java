@@ -1,4 +1,4 @@
-package io.backend.notifications.modules.auth.controller;
+package io.backend.notifications.controller;
 
 import java.util.Optional;
 
@@ -7,14 +7,14 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import io.backend.notifications.modules.auth.model.User;
-import io.backend.notifications.modules.auth.repository.UserRepository;
+import io.backend.notifications.entity.User;
+import io.backend.notifications.repository.UserRepository;
 
 @RestController
 @RequestMapping("/users")
 public class UserController {
 
-    private final UserRepository userRepository;
+    private final Use userRepository;
 
     public UserController(UserRepository userRepository) {
         this.userRepository = userRepository;

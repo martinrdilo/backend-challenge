@@ -1,8 +1,10 @@
-package io.backend.notifications.modules.notifications.model;
+package io.backend.notifications.entity;
 
 import java.time.Instant;
+import org.springframework.data.annotation.Id;
 
-public record Notification(Long id,
+public record Notification(
+        @Id Long id,
         Long userId,
         String message,
         String title,

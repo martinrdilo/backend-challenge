@@ -1,7 +1,7 @@
-package io.backend.notifications.modules.auth.repository;
+package io.backend.notifications.repository;
 
 import org.springframework.data.repository.CrudRepository;
-import io.backend.notifications.modules.auth.model.User;
+import io.backend.notifications.entity.User;
 
 public interface UserRepository extends CrudRepository<User, Long> {
 
