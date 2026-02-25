@@ -1,34 +1,48 @@
 package io.backend.notifications.controller;
 
-import java.util.Optional;
-
+import java.util.List;
+import io.backend.notifications.dto.UserRequest;
+import io.backend.notifications.dto.UserResponse;
+import io.backend.notifications.service.UserService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
-import io.backend.notifications.entity.User;
-import io.backend.notifications.repository.UserRepository;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/users")
 public class UserController {
 
-    private final Use userRepository;
+    private final UserService userService;
 
-    public UserController(UserRepository userRepository) {
-        this.userRepository = userRepository;
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+
+    @GetMapping
+    public ResponseEntity<List<UserResponse>> findAll() {
+        return ResponseEntity.ok(userService.findAll());
     }
 
     @GetMapping("/{id}")
-    private ResponseEntity<User> findById(Long id) {
-        Optional<User> userOptional = userRepository.findById(id);
-
-        if (userOptional.isPresent()) {
-            return ResponseEntity.ok(userOptional.get());
-        }
-
-        return ResponseEntity.notFound().build();
+    public ResponseEntity<UserResponse> findById(@PathVariable long id) {
+        return ResponseEntity.ok(userService.findById(id));
     }
 
+    @PostMapping
+    public ResponseEntity<UserResponse> create(@Valid @RequestBody UserRequest userRequest) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(userService.create(userRequest));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<UserResponse> update(@PathVariable long id,
+                                               @Valid @RequestBody UserRequest userRequest) {
+        return ResponseEntity.ok(userService.update(id, userRequest));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<UserResponse> delete(@PathVariable long id) {
+        userService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
 }
