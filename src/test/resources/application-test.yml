@@ -1,0 +1,30 @@
+# Test profile configuration
+# Datasource properties are overridden dynamically by Testcontainers
+# via @DynamicPropertySource in AbstractIntegrationTest
+
+spring:
+  datasource:
+    url: jdbc:tc:postgresql:16:///test_db
+    username: test
+    password: test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+# External API base-url: overridden dynamically by WireMock
+# via @DynamicPropertySource in AbstractIntegrationTest
+external:
+  api:
+    jsonplaceholder:
+      base-url: http://localhost:0
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
