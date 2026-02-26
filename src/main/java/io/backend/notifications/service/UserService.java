@@ -44,7 +44,7 @@ public class UserService {
         User existing = findEntityById(id);
         existing.setUsername(request.username());
         existing.setEmail(request.email());
-        return toResponse(existing);
+        return toResponse(userRepository.save(existing));
     }
 
     public void delete(Long id) {
