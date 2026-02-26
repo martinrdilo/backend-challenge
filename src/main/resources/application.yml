@@ -16,6 +16,11 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+external:
+  api:
+    jsonplaceholder:
+      base-url: https://jsonplaceholder.typicode.com
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
