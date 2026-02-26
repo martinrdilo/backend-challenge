@@ -1,6 +1,7 @@
 package io.backend.notifications.controller;
 
 import java.util.List;
+import io.backend.notifications.dto.ExternalPostResponse;
 import io.backend.notifications.dto.UserRequest;
 import io.backend.notifications.dto.UserResponse;
 import io.backend.notifications.service.UserService;
@@ -44,5 +45,10 @@ public class UserController {
     public ResponseEntity<UserResponse> delete(@PathVariable long id) {
         userService.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}/external-notifications")
+    public ResponseEntity<List<ExternalPostResponse>> getExternalNotifications(@PathVariable long id) {
+        return ResponseEntity.ok(userService.getExternalNotifications(id));
     }
 }
