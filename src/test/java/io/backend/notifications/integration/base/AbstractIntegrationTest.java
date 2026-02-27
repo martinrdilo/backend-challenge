@@ -2,8 +2,10 @@ package io.backend.notifications.integration.base;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
-import org.springframework.beans.factory.annotation.Autowired;
+import io.backend.notifications.fixture.wiremock.WireMockHelper;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -51,6 +53,23 @@ public abstract class AbstractIntegrationTest {
                 () -> "http://localhost:" + WIREMOCK.port());
     }
 
-    @Autowired
-    protected WebTestClient webTestClient;
+    /**
+     * Runs before EACH test method in every subclass.
+     * Resets WireMock stubs so no test inherits stubs from a previous one.
+     * Subclasses that need to clean DB data should call their repository.deleteAll()
+     * in their own @BeforeEach (which runs AFTER this one).
+     */
+    @BeforeEach
+    void resetMocks() {
+        WireMockHelper.reset(WIREMOCK);
+    }
+
+    @LocalServerPort
+    private int port;
+
+    protected WebTestClient webTestClient() {
+        return WebTestClient.bindToServer()
+                .baseUrl("http://localhost:" + port)
+                .build();
+    }
 }
