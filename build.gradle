@@ -31,9 +31,9 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // Testing - Testcontainers (PostgreSQL real para tests)
-    testImplementation platform('org.testcontainers:testcontainers-bom:1.20.4')
-    testImplementation 'org.testcontainers:postgresql'
-    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers:2.0.3'
+    testImplementation 'org.testcontainers:testcontainers-postgresql:2.0.3'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter:2.0.3'
 
     // Testing - WireMock (mock de APIs externas)
     testImplementation 'org.wiremock:wiremock-standalone:3.10.0'
