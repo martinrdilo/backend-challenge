@@ -1,7 +1,5 @@
 package io.backend.notifications.service;
 
-import io.backend.notifications.client.ExternalPostClient;
-import io.backend.notifications.dto.ExternalPostResponse;
 import io.backend.notifications.dto.UserRequest;
 import io.backend.notifications.dto.UserResponse;
 import io.backend.notifications.entity.User;
@@ -16,11 +14,9 @@ import java.util.List;
 public class UserService {
 
     private final UserRepository userRepository;
-    private final ExternalPostClient externalPostClient;
 
-    public UserService(UserRepository userRepository, ExternalPostClient externalPostClient) {
+    public UserService(UserRepository userRepository) {
         this.userRepository = userRepository;
-        this.externalPostClient = externalPostClient;
     }
 
     public List<UserResponse> findAll() {
@@ -54,11 +50,6 @@ public class UserService {
     public void delete(Long id) {
         findEntityById(id);
         userRepository.deleteById(id);
-    }
-
-    public List<ExternalPostResponse> getExternalNotifications(Long userId) {
-        findEntityById(userId);
-        return externalPostClient.getPostsByUser(userId);
     }
 
     private UserResponse toResponse(User user) {

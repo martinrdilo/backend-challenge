@@ -1,9 +1,10 @@
 package io.backend.notifications.controller;
 
 import java.util.List;
-import io.backend.notifications.dto.ExternalPostResponse;
+import io.backend.notifications.dto.MergedNotificationsResponse;
 import io.backend.notifications.dto.UserRequest;
 import io.backend.notifications.dto.UserResponse;
+import io.backend.notifications.service.NotificationService;
 import io.backend.notifications.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -15,9 +16,11 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
 
     private final UserService userService;
+    private final NotificationService notificationService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, NotificationService notificationService) {
         this.userService = userService;
+        this.notificationService = notificationService;
     }
 
     @GetMapping
@@ -48,7 +51,7 @@ public class UserController {
     }
 
     @GetMapping("/{id}/external-notifications")
-    public ResponseEntity<List<ExternalPostResponse>> getExternalNotifications(@PathVariable long id) {
-        return ResponseEntity.ok(userService.getExternalNotifications(id));
+    public ResponseEntity<MergedNotificationsResponse> getExternalNotifications(@PathVariable long id) {
+        return ResponseEntity.ok(notificationService.findMergedByUserId(id));
     }
 }
