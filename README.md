@@ -1,2 +1,2 @@
 # backend-challenge
-backend challenge from Yari Taft mentoring
+Notification Management System is a full-stack web application built as a take-home technical challenge. It provides a RESTful API for authenticated users to create, update, delete, and query their own notifications across multiple delivery channels — Email, SMS, and Push Notification. Each channel implements its own dispatch logic (validation, formatting, and logging), and the architecture is designed to be easily extensible so that new channels can be added without touching existing code. Authentication is handled via token-based access, ensuring that all endpoints are protected and user data remains isolated.
