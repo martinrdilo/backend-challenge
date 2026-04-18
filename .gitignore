@@ -35,3 +35,7 @@ out/
 
 ### docs ###
 .docs/
+
+### Environment files ###
+.env
+.env.test
