@@ -104,10 +104,10 @@ public final class NotificationSpecifications {
         if (search == null || search.isBlank()) {
             return null;
         }
-        String pattern = "%" + search + "%";
+        String pattern = "%" + search.toLowerCase() + "%";
         return (root, query, cb) -> {
-            Predicate titleLike = cb.like(root.get("title"), pattern);
-            Predicate contentLike = cb.like(root.get("content"), pattern);
+            Predicate titleLike = cb.like(cb.lower(root.get("title")), pattern);
+            Predicate contentLike = cb.like(cb.lower(root.get("content")), pattern);
             return cb.or(titleLike, contentLike);
         };
     }

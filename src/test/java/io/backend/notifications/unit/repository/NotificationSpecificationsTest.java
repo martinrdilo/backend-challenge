@@ -156,10 +156,15 @@ class NotificationSpecificationsTest {
 
     @Test
     void titleOrContentContainsShouldCreateOrLikeExpression() {
+        Path<String> lowerTitlePath = mock(Path.class);
+        Path<String> lowerContentPath = mock(Path.class);
+
         when(root.get("title")).thenReturn((Path) titlePath);
         when(root.get("content")).thenReturn((Path) contentPath);
-        when(cb.like(eq(titlePath), eq("%alert%"))).thenReturn(predicate);
-        when(cb.like(eq(contentPath), eq("%alert%"))).thenReturn(anotherPredicate);
+        when(cb.lower(titlePath)).thenReturn(lowerTitlePath);
+        when(cb.lower(contentPath)).thenReturn(lowerContentPath);
+        when(cb.like(eq(lowerTitlePath), eq("%alert%"))).thenReturn(predicate);
+        when(cb.like(eq(lowerContentPath), eq("%alert%"))).thenReturn(anotherPredicate);
         when(cb.or(predicate, anotherPredicate)).thenReturn(predicate);
 
         Specification<Notification> spec = NotificationSpecifications.titleOrContentContains("alert");
