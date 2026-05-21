@@ -261,12 +261,33 @@ Missing: update and delete.
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/notifications` | Create notification (triggers channel dispatch) |
-| GET | `/notifications` | List authenticated user's notifications |
+| GET | `/notifications` | List authenticated user's notifications — paginated, filterable by status, channel, date range, and text |
 | GET | `/notifications/{id}` | Get notification by ID (own only, 403 otherwise) |
 | PUT | `/notifications/{id}` | Update title, content, attachmentIds |
 | DELETE | `/notifications/{id}` | Delete notification (204 No Content) |
 
 `GET /notifications/user/{userId}` was **removed**.
+
+### Paginated & Filtered List
+
+The `GET /notifications` endpoint now returns a `Page<EnrichedNotificationResponse>` instead of a plain `List`. Spring Data `JpaSpecificationExecutor` handles both the filtered query and the count query automatically.
+
+```java
+@GetMapping
+public ResponseEntity<Page<EnrichedNotificationResponse>> getMyNotifications(
+        @RequestParam(required = false) Status status,
+        @RequestParam(required = false) Channel channel,
+        @RequestParam(required = false) Instant createdAfter,
+        @RequestParam(required = false) Instant createdBefore,
+        @RequestParam(required = false) String search,
+        @PageableDefault(size = 20) Pageable pageable) {
+    Page<EnrichedNotificationResponse> page = notificationService
+            .getMyNotifications(status, channel, createdAfter, createdBefore, search, pageable);
+    return ResponseEntity.ok(page);
+}
+```
+
+All query parameters are optional. The service composes a `Specification<Notification>` that always starts with an ownership filter (`belongsToUser`) and adds additional predicates only when the corresponding parameter is present. The controller caps the page size at 100 to prevent abusive requests.
 
 ### Ownership Helper
 

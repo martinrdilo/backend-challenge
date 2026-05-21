@@ -121,3 +121,49 @@ La base de datos usa **Flyway** con PostgreSQL para manejar el schema de forma v
 
 - **`validate` en prod**: Hibernate compara entidades con la DB al iniciar. Si hay drift, la app no arranca — falla temprano, con error claro.
 - **`none` en tests**: Flyway es la única fuente de verdad del schema. Si la migración está rota, los tests fallan en CI antes de llegar a producción. Con `create-drop`, Hibernate hubiera "arreglado" el bug silenciosamente.
+
+---
+
+## 11. Seed Data con CommandLineRunner
+
+La aplicación incluye un `@Profile("!test") CommandLineRunner` que crea 2 usuarios de ejemplo y 5 notificaciones al iniciar en entornos de desarrollo. Es idempotente: verifica `existsByEmail` para los usuarios y `count()` para las notificaciones antes de insertar.
+
+Los passwords se hashean con `PasswordEncoder` (BCrypt) en lugar de guardarse en texto plano, manteniendo consistencia con el flujo de registro real.
+
+**Por qué CommandLineRunner y no una migración Flyway**:
+
+- **Separación de responsabilidades**: Flyway gestiona el schema; los datos de ejemplo son un concern de runtime, no de schema.
+- **Perfil condicional**: `@Profile("!test")` evita que los tests se contaminen con datos inesperados. Flyway corre en todos los perfiles.
+- **Idempotencia programática**: `existsByEmail` + `count()` permiten reiniciar la app sin errores de duplicados. Una migración Flyway de seed data requeriría complicar `flyway_schema_history` o usar `INSERT ... ON CONFLICT`.
+- **Encapsulamiento**: la lógica de seed vive junto a los servicios de dominio, no en SQL puro.
+
+---
+
+## 12. Paginación con Spring Data Pageable
+
+`GET /notifications` devuelve `Page<EnrichedNotificationResponse>` en lugar de `List`. Spring Data `JpaSpecificationExecutor` maneja automáticamente la query de conteo cuando se usa `Pageable`.
+
+- **Tamaño por defecto**: 20 elementos (`@PageableDefault(size = 20)`)
+- **Tamaño máximo**: 100 elementos (validado en controller para evitar páginas abusivas)
+- **Respuesta**: incluye `content`, `totalElements`, `totalPages`, `number`, `size`
+
+**Por qué Page sobre List**:
+
+- **Escalabilidad**: un usuario con miles de notificaciones no puede recibirlas todas en un solo request.
+- **Estándar de Spring**: `Pageable` es la abstracción idiomatica de Spring Data. No requiere lógica manual de `LIMIT` / `OFFSET`.
+- **Metadatos sin costo**: el cliente recibe información de paginación sin parsear headers custom.
+
+---
+
+## 13. JPA Specifications para Búsqueda Dinámica
+
+Los filtros opcionales de `GET /notifications` (status, channel, createdAfter, createdBefore, search) se implementan con `JpaSpecificationExecutor` y predicados composables en `NotificationSpecification`.
+
+Cada criterio es un método factory estático que devuelve `Specification<Notification>` o `null` cuando el parámetro no está presente. El servicio las combina con `Specification.where(...).and(...)`.
+
+**Por qué Specifications en lugar de una query monolítica `@Query`**:
+
+- **Open/Closed Principle**: agregar un nuevo filtro requiere solo un método factory estático. Cero cambios en controller, service o predicados existentes — el mismo patrón que `ChannelSender`.
+- **Null-safe**: los factories devuelven `null` cuando el parámetro es ausente, y `Specification.where()` los ignora automáticamente.
+- **IDOR ownership filter**: el predicado `belongsToUser` se aplica como base de **todas** las queries. Ninguna búsqueda dinámica puede exponer notificaciones de otro usuario.
+- **Type-safe**: los nombres de campo se referencian vía metamodel o strings estáticas, evitando errores de typo en queries JPQL concatenadas.
