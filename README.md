@@ -128,7 +128,7 @@ POST /notifications
 ./gradlew test
 ```
 
-**Current coverage**: 101 tests (unit + integration), 0 failures.
+**Current coverage**: 120 tests (unit + integration), 0 failures.
 
 - **Unit**: `MockitoExtension`, no Spring context. Each sender and service tested in isolation.
 - **Integration**: `Testcontainers` (real PostgreSQL) + `WireMock` (external API) + `WebTestClient` (HTTP).
@@ -169,6 +169,14 @@ All dependencies use constructor injection (no `@Autowired`). Dependencies are e
 
 Integration tests use real PostgreSQL via Testcontainers, WireMock for the external API, and `WebTestClient` for HTTP. The database is never mocked. Catches real SQL dialect differences and constraint issues.
 
+### RFC 7807 Error Format
+
+Error responses follow the IETF RFC 7807 standard (`application/problem+json`). Instead of ad-hoc JSON structures, every error returns a `ProblemDetail` object with `type`, `title`, `status`, and `detail` fields. Field-level validation errors are embedded under `errors`. Clients can parse failures without guessing the response shape, and stack traces are never leaked.
+
+### Auth Rate Limiting
+
+A Bucket4j token-bucket filter protects authentication endpoints from brute-force attacks. The filter runs before `JwtAuthFilter` and enforces per-IP limits: 5 login requests per minute and 3 register requests per minute. Excess requests receive `429 Too Many Requests` with a `Retry-After` header. IP addresses are resolved from `X-Forwarded-For` when present, falling back to the remote address. Storage is in-memory and per-instance.
+
 > Full reasoning behind each decision → [`docs/06-technical-decisions.md`](docs/06-technical-decisions.md)
 
 ## Documentation
@@ -186,9 +194,7 @@ Detailed docs in [`docs/`](docs/):
 Tradeoffs and improvements I'd make with more time:
 
 - **Database migrations**: replace `ddl-auto=update` with Flyway or Liquibase for production-grade schema versioning
-- **Error handling**: adopt RFC 7807 Problem Details (`application/problem+json`) for structured, machine-readable error responses
 - **Seed data**: add a seed migration or data initializer so the app starts with sample users and notifications
-- **Rate limiting**: protect auth endpoints against brute-force attacks
 
 ## Known Issues
 
