@@ -8,6 +8,9 @@ server:
 spring:
   application:
     name: backend-notifications
+  mvc:
+    problemdetails:
+      enabled: true
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -33,6 +36,11 @@ external:
 jwt:
   secret: ${JWT_SECRET}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+rate-limit:
+  login-attempts-per-minute: 5
+  register-attempts-per-minute: 3
+  window-minutes: 1
 
 springdoc:
   swagger-ui:
