@@ -92,14 +92,6 @@ public class NotificationService {
         return notification;
     }
 
-    public List<EnrichedNotificationResponse> getMyNotifications() {
-        String email = SecurityContextHolder.getContext().getAuthentication().getName();
-        return notificationRepository.findAllByUserEmail(email)
-                .stream()
-                .map(this::enrichNotification)
-                .toList();
-    }
-
     /**
      * Searches notifications with optional criteria and pagination.
      * Ownership is enforced via {@link NotificationSpecifications#belongsToUser(String)}.

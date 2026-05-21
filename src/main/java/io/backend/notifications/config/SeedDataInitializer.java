@@ -48,6 +48,12 @@ public class SeedDataInitializer implements CommandLineRunner {
         User bob = createUserIfNotExists(
                 "bob@example.com", "bob", "+541198765432", null);
 
+        if (notificationRepository.count() > 0) {
+            log.info("Notifications already exist, skipping notification seed.");
+            log.info("Seed data complete.");
+            return;
+        }
+
         createNotification(alice, "Welcome alert", "Welcome to the notification system",
                 Channel.EMAIL, Status.SENT);
 

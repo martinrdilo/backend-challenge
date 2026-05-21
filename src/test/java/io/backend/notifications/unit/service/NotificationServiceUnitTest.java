@@ -131,43 +131,6 @@ class NotificationServiceUnitTest {
                 .isEqualTo(HttpStatus.FORBIDDEN);
     }
 
-    // ──── T4: getMyNotifications ────
-
-    @Test
-    void getMyNotificationsShouldReturnEnrichedListForAuthenticatedUser() {
-        User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
-        owner.setId(1L);
-        Notification n1 = NotificationBuilder.aNotification()
-                .withUser(owner)
-                .withTitle("First")
-                .build();
-        n1.setId(1L);
-        Notification n2 = NotificationBuilder.aNotification()
-                .withUser(owner)
-                .withTitle("Second")
-                .build();
-        n2.setId(2L);
-
-        when(notificationRepository.findAllByUserEmail(USER_EMAIL)).thenReturn(List.of(n1, n2));
-
-        var result = notificationService.getMyNotifications();
-
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0).title()).isEqualTo("First");
-        assertThat(result.get(1).title()).isEqualTo("Second");
-        verify(notificationRepository).findAllByUserEmail(USER_EMAIL);
-    }
-
-    @Test
-    void getMyNotificationsShouldReturnEmptyListWhenNoNotifications() {
-        when(notificationRepository.findAllByUserEmail(USER_EMAIL)).thenReturn(List.of());
-
-        var result = notificationService.getMyNotifications();
-
-        assertThat(result).isEmpty();
-        verify(notificationRepository).findAllByUserEmail(USER_EMAIL);
-    }
-
     // ──── T5: updateNotification ────
 
     @Test
