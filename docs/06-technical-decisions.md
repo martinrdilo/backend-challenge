@@ -121,3 +121,11 @@ La base de datos usa **Flyway** con PostgreSQL para manejar el schema de forma v
 
 - **`validate` en prod**: Hibernate compara entidades con la DB al iniciar. Si hay drift, la app no arranca — falla temprano, con error claro.
 - **`none` en tests**: Flyway es la única fuente de verdad del schema. Si la migración está rota, los tests fallan en CI antes de llegar a producción. Con `create-drop`, Hibernate hubiera "arreglado" el bug silenciosamente.
+
+---
+
+## 9. Spring Retry para Channel Dispatch con Backoff Exponencial
+
+El `@Retryable` se aplica en `ChannelDispatcher.dispatch()` en lugar de en cada `ChannelSender` individual porque la anotación requiere una invocación cross-bean para que el proxy de AOP de Spring intercepte el método. Colocarla en el `ChannelDispatcher` centraliza la política de reintento, evita duplicar lógica en cada implementación de canal (DRY) y asegura que cualquier falla transitoria en cualquier sender sea manejada de forma uniforme. Se excluye explícitamente `IllegalStateException` porque una sola clase cubre tanto errores de configuración ("no sender found") como errores de validación ("null email/token"), los cuales son fallas deterministas que no se resuelven con reintentos. Los parámetros de backoff exponencial se configuran con `maxAttempts=3`, `delay=1000ms` y `multiplier=2.0`, produciendo reintentos a los 1s, 2s y 4s después del intento inicial.
+
+No se define un método `@Recover` porque el bloque `catch` existente en `NotificationService` ya actualiza el estado de la notificación a `FAILED`, lo cual preserva el Single Responsibility Principle al evitar inyectar `NotificationRepository` dentro de `ChannelDispatcher`. Las expresiones SpEL `#{...}` en la anotación resuelven valores desde `application.yml`, permitiendo ajustar `maxAttempts` y `delay` por entorno sin recompilar. Para testing, una `@TestConfiguration` provee un `ChannelSender` mock anotado con `@Primary` y el perfil de test sobreescribe el delay a `0ms`, logrando ejecuciones en sub-milisegundos. La estrategia bloquea el thread HTTP hasta ~7s en el peor caso, lo cual es aceptable para el endpoint de creación de notificaciones; la evolución hacia dispatch asincrónico queda como trabajo futuro.
