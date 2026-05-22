@@ -23,6 +23,7 @@ How to test:
 - **CRUD for notifications**: create, read, update, delete
 - **Multi-channel simulated delivery**: Email, SMS, and Push — each with channel-specific validation and formatting
 - **Ownership enforcement**: users can only access their own notifications (IDOR protection)
+- **Async event-driven dispatch** — decoupled POST response from channel delivery using Spring ApplicationEvents and `@Async`
 - **Open/Closed Principle**: adding a new channel requires zero changes to existing code
 - **Swagger UI**: interactive API documentation at `/swagger-ui.html`
 
@@ -58,7 +59,7 @@ The API will be available at `http://localhost:8080`. Swagger UI at `http://loca
 |--------|------|-------------|------|
 | GET | `/notifications` | List authenticated user's notifications | Bearer |
 | GET | `/notifications/{id}` | Get notification by ID (own only) | Bearer |
-| POST | `/notifications` | Create notification (triggers simulated channel delivery) | Bearer |
+| POST | `/notifications` | Create notification (returns `PENDING`, dispatches asynchronously) | Bearer |
 | PUT | `/notifications/{id}` | Update notification (title, content, attachmentIds) | Bearer |
 | DELETE | `/notifications/{id}` | Delete notification (own only) | Bearer |
 
@@ -82,7 +83,7 @@ POST /notifications
   "title": "System Alert",
   "content": "Server requires scheduled maintenance.",
   "channel": "EMAIL",
-  "status": "SENT",
+  "status": "PENDING",
   "createdAt": "2026-05-10T01:30:00",
   "userId": 1,
   "attachments": [
@@ -128,7 +129,7 @@ POST /notifications
 ./gradlew test
 ```
 
-**Current coverage**: 101 tests (unit + integration), 0 failures.
+**Current coverage**: 115 tests (unit + integration), 0 failures.
 
 - **Unit**: `MockitoExtension`, no Spring context. Each sender and service tested in isolation.
 - **Integration**: `Testcontainers` (real PostgreSQL) + `WireMock` (external API) + `WebTestClient` (HTTP).
@@ -164,6 +165,18 @@ All dependencies use constructor injection (no `@Autowired`). Dependencies are e
 ### Immutable Channel on Update
 
 `PUT /notifications/{id}` uses `NotificationUpdateRequest`, a DTO that excludes the `channel` field. Once dispatched through a channel, it can't be changed — there's no business case for "un-sending."
+
+### Async Event-Driven Dispatch
+
+Notification creation and channel delivery are decoupled using Spring `ApplicationEventPublisher` + `@EventListener` + `@Async`. The `POST /notifications` endpoint publishes a `NotificationCreatedEvent` and returns immediately with `PENDING` status. A `NotificationDispatchListener` handles actual channel delivery on a separate thread with its own transaction (`REQUIRES_NEW`).
+
+Thread pool config (bounded):
+- Core pool size: 2
+- Max pool size: 4
+- Queue capacity: 25
+- Thread name prefix: `notification-dispatch-`
+
+This keeps the HTTP thread free, prevents timeouts on slow channel simulations, and isolates listener failures from the publisher transaction.
 
 ### Integration Tests with Real Infrastructure
 
