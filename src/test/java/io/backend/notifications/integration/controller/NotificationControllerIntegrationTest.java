@@ -15,7 +15,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
+import java.time.Duration;
 import java.util.List;
+
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Integration tests for NotificationController with JWT authentication.
@@ -78,7 +82,7 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void shouldSetStatusToSentForEmailChannel() {
+    void shouldSetStatusToPendingForEmailChannel() {
         UserBuilder builder = UserBuilder.aUser();
         String token = registerAndLogin(builder);
 
@@ -97,11 +101,11 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody()
-                .jsonPath("$.status").isEqualTo("SENT");
+                .jsonPath("$.status").isEqualTo("PENDING");
     }
 
     @Test
-    void shouldSetStatusToSentForSmsChannelWithLongContent() {
+    void shouldSetStatusToPendingForSmsChannelWithLongContent() {
         UserBuilder builder = UserBuilder.aUser();
         String token = registerAndLogin(builder);
 
@@ -121,11 +125,11 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody()
-                .jsonPath("$.status").isEqualTo("SENT");
+                .jsonPath("$.status").isEqualTo("PENDING");
     }
 
     @Test
-    void shouldSetStatusToSentForPushChannel() {
+    void shouldSetStatusToPendingForPushChannel() {
         UserBuilder builder = UserBuilder.aUser().withDeviceToken("tok_test");
         String token = registerAndLogin(builder);
 
@@ -144,7 +148,7 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody()
-                .jsonPath("$.status").isEqualTo("SENT");
+                .jsonPath("$.status").isEqualTo("PENDING");
     }
 
     // ──── T7: GET /notifications (list own) ────
@@ -755,5 +759,78 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
                 .expectStatus().isCreated()
                 .expectBody()
                 .jsonPath("$.channel").isEqualTo("EMAIL");
+    }
+
+    // ──── Async Event Dispatch ────
+
+    @Test
+    void shouldTransitionFromPendingToSentAfterAsyncDispatch() {
+        UserBuilder builder = UserBuilder.aUser();
+        String token = registerAndLogin(builder);
+
+        NotificationRequest request = new NotificationRequest("Async Test", "Async Content", Channel.EMAIL, List.of());
+
+        // POST returns PENDING immediately
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(request)
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo("PENDING");
+
+        var user = userRepository.findByEmail(builder.getEmail()).orElseThrow();
+        var notifications = notificationRepository.findAllByUserId(user.getId());
+        Long notificationId = notifications.get(0).getId();
+
+        // Await async dispatch to complete
+        await().atMost(Duration.ofSeconds(5))
+                .pollInterval(Duration.ofMillis(100))
+                .untilAsserted(() ->
+                        webTestClient().get()
+                                .uri("/notifications/{id}", notificationId)
+                                .header("Authorization", "Bearer " + token)
+                                .exchange()
+                                .expectStatus().isOk()
+                                .expectBody()
+                                .jsonPath("$.status").isEqualTo("SENT"));
+    }
+
+    @Test
+    void shouldTransitionFromPendingToFailedWhenDispatchFails() {
+        // Register user WITHOUT device token — PushChannelSender will throw
+        UserBuilder builder = UserBuilder.aUser();
+        String token = registerAndLogin(builder);
+
+        NotificationRequest request = new NotificationRequest("Fail Test", "Will fail", Channel.PUSH, List.of());
+
+        // POST returns PENDING immediately
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(request)
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo("PENDING");
+
+        var user = userRepository.findByEmail(builder.getEmail()).orElseThrow();
+        var notifications = notificationRepository.findAllByUserId(user.getId());
+        Long notificationId = notifications.get(0).getId();
+
+        // Await async dispatch to fail
+        await().atMost(Duration.ofSeconds(5))
+                .pollInterval(Duration.ofMillis(100))
+                .untilAsserted(() ->
+                        webTestClient().get()
+                                .uri("/notifications/{id}", notificationId)
+                                .header("Authorization", "Bearer " + token)
+                                .exchange()
+                                .expectStatus().isOk()
+                                .expectBody()
+                                .jsonPath("$.status").isEqualTo("FAILED"));
     }
 }

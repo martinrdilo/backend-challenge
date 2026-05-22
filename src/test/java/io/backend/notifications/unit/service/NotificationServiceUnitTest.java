@@ -1,15 +1,16 @@
 package io.backend.notifications.unit.service;
 
 import io.backend.notifications.client.ExternalMediaClient;
+import io.backend.notifications.dto.NotificationRequest;
 import io.backend.notifications.dto.NotificationUpdateRequest;
 import io.backend.notifications.entity.Notification;
 import io.backend.notifications.entity.User;
+import io.backend.notifications.enums.Channel;
 import io.backend.notifications.fixture.entity.NotificationBuilder;
 import io.backend.notifications.fixture.entity.UserBuilder;
 import io.backend.notifications.repository.NotificationRepository;
 import io.backend.notifications.repository.UserRepository;
 import io.backend.notifications.service.NotificationService;
-import io.backend.notifications.service.channel.ChannelDispatcher;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
@@ -48,7 +50,7 @@ class NotificationServiceUnitTest {
     private ExternalMediaClient externalMediaClient;
 
     @Mock
-    private ChannelDispatcher channelDispatcher;
+    private ApplicationEventPublisher eventPublisher;
 
     @Mock
     private SecurityContext securityContext;
@@ -227,5 +229,28 @@ class NotificationServiceUnitTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting("statusCode")
                 .isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    // ──── Async Event Publishing ────
+
+    @Test
+    void createNotificationShouldPublishEventWithCorrectId() {
+        User user = UserBuilder.aUser().withEmail(USER_EMAIL).build();
+        user.setId(1L);
+        when(userRepository.findByEmail(USER_EMAIL)).thenReturn(Optional.of(user));
+
+        Notification savedNotification = NotificationBuilder.aNotification()
+                .withUser(user)
+                .withChannel(Channel.EMAIL)
+                .build();
+        savedNotification.setId(42L);
+        when(notificationRepository.save(any(Notification.class))).thenReturn(savedNotification);
+
+        NotificationRequest request = new NotificationRequest("Title", "Content", Channel.EMAIL, List.of());
+        notificationService.createNotification(request);
+
+        verify(eventPublisher).publishEvent(argThat((Object event) ->
+                event instanceof io.backend.notifications.event.NotificationCreatedEvent
+                && ((io.backend.notifications.event.NotificationCreatedEvent) event).notificationId().equals(42L)));
     }
 }
