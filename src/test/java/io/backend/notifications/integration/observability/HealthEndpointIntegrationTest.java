@@ -1,5 +1,6 @@
 package io.backend.notifications.integration.observability;
 
+import com.github.tomakehurst.wiremock.client.WireMock;
 import io.backend.notifications.fixture.entity.UserBuilder;
 import io.backend.notifications.integration.base.AbstractIntegrationTest;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +21,13 @@ class HealthEndpointIntegrationTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("returns 200 UP when actuator is configured")
         void shouldReturnUpStatusWhenAuthenticated() {
+            // Stub external API so ExternalApiHealthIndicator reports UP
+            WIREMOCK.stubFor(WireMock.get(WireMock.urlEqualTo("/posts/1"))
+                    .willReturn(WireMock.aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{}")));
+
             UserBuilder builder = UserBuilder.aUser();
             String token = registerAndLogin(builder);
 
@@ -38,12 +46,21 @@ class HealthEndpointIntegrationTest extends AbstractIntegrationTest {
     class WithoutAuthentication {
 
         @Test
-        @DisplayName("returns 401 when no token provided")
-        void shouldReturn401WithoutToken() {
+        @DisplayName("returns 200 without token (K8s liveness convention)")
+        void shouldReturn200WithoutToken() {
+            // Stub external API so ExternalApiHealthIndicator reports UP
+            WIREMOCK.stubFor(WireMock.get(WireMock.urlEqualTo("/posts/1"))
+                    .willReturn(WireMock.aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{}")));
+
             webTestClient().get()
                     .uri("/actuator/health")
                     .exchange()
-                    .expectStatus().isUnauthorized();
+                    .expectStatus().isOk()
+                    .expectBody()
+                    .jsonPath("$.status").isEqualTo("UP");
         }
     }
 }

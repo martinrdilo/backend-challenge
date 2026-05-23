@@ -60,9 +60,63 @@
                 </providers>
             </encoder>
         </appender>
+
+        <!-- File Appender: structured JSON to logs/structured.log with rotation -->
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>logs/structured.log</file>
+            <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+                <providers>
+                    <timestamp>
+                        <fieldName>timestamp</fieldName>
+                    </timestamp>
+                    <logLevel>
+                        <fieldName>level</fieldName>
+                    </logLevel>
+                    <loggerName>
+                        <fieldName>logger</fieldName>
+                    </loggerName>
+                    <threadName>
+                        <fieldName>thread</fieldName>
+                    </threadName>
+                    <message>
+                        <fieldName>message</fieldName>
+                    </message>
+                    <stackTrace>
+                        <fieldName>exception</fieldName>
+                        <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                            <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                            <maxLength>2048</maxLength>
+                            <shortenedClassNameLength>20</shortenedClassNameLength>
+                            <rootCauseFirst>true</rootCauseFirst>
+                        </throwableConverter>
+                    </stackTrace>
+                    <mdc>
+                        <fieldName>correlationId</fieldName>
+                    </mdc>
+                    <mdc>
+                        <fieldName>userId</fieldName>
+                    </mdc>
+                    <mdc>
+                        <fieldName>channel</fieldName>
+                    </mdc>
+                    <mdc>
+                        <fieldName>notificationId</fieldName>
+                    </mdc>
+                </providers>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>logs/structured-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <maxFileSize>10MB</maxFileSize>
+                <maxHistory>30</maxHistory>
+                <totalSizeCap>1GB</totalSizeCap>
+            </rollingPolicy>
+        </appender>
     </springProfile>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
+        <springProfile name="!default &amp; !dev">
+            <appender-ref ref="FILE"/>
+        </springProfile>
     </root>
 </configuration>
