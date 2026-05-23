@@ -185,7 +185,7 @@ Error responses follow the IETF RFC 7807 standard (`application/problem+json`). 
 
 A Bucket4j token-bucket filter protects authentication endpoints from brute-force attacks. The filter runs before `JwtAuthFilter` and enforces per-IP limits: 5 login requests per minute and 3 register requests per minute. Excess requests receive `429 Too Many Requests` with a `Retry-After` header. IP addresses are resolved from `X-Forwarded-For` when present, falling back to the remote address. Storage is in-memory and per-instance.
 
-> Full reasoning behind each decision → [`docs/06-technical-decisions.md`](docs/06-technical-decisions.md)
+> Full reasoning behind each decision → [`docs/05-technical-decisions.md`](docs/05-technical-decisions.md)
 
 ## Documentation
 
@@ -195,7 +195,7 @@ Detailed docs in [`docs/`](docs/):
 - [`02-channel-sending-and-crud.md`](docs/02-channel-sending-and-crud.md) — Strategy pattern for channel dispatch + CRUD operations
 - [`03-testing-infrastructure.md`](docs/03-testing-infrastructure.md) — Testcontainers, WireMock, and test architecture
 - [`04-testing-architecture-diagram.md`](docs/04-testing-architecture-diagram.md) — Visual overview of the test setup
-- [`06-technical-decisions.md`](docs/06-technical-decisions.md) — Detailed reasoning behind all architectural decisions
+- [`06-technical-decisions.md`](docs/05-technical-decisions.md) — Detailed reasoning behind all architectural decisions
 
 ## Areas to Improve
 
