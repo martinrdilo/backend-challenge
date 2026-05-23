@@ -1,9 +1,12 @@
 package io.backend.notifications.unit.service;
 
 import io.backend.notifications.client.ExternalMediaClient;
+import io.backend.notifications.dto.NotificationCriteria;
 import io.backend.notifications.dto.NotificationUpdateRequest;
 import io.backend.notifications.entity.Notification;
 import io.backend.notifications.entity.User;
+import io.backend.notifications.enums.Channel;
+import io.backend.notifications.enums.Status;
 import io.backend.notifications.fixture.entity.NotificationBuilder;
 import io.backend.notifications.fixture.entity.UserBuilder;
 import io.backend.notifications.repository.NotificationRepository;
@@ -14,10 +17,16 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
@@ -122,43 +131,6 @@ class NotificationServiceUnitTest {
                 .isEqualTo(HttpStatus.FORBIDDEN);
     }
 
-    // ──── T4: getMyNotifications ────
-
-    @Test
-    void getMyNotificationsShouldReturnEnrichedListForAuthenticatedUser() {
-        User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
-        owner.setId(1L);
-        Notification n1 = NotificationBuilder.aNotification()
-                .withUser(owner)
-                .withTitle("First")
-                .build();
-        n1.setId(1L);
-        Notification n2 = NotificationBuilder.aNotification()
-                .withUser(owner)
-                .withTitle("Second")
-                .build();
-        n2.setId(2L);
-
-        when(notificationRepository.findAllByUserEmail(USER_EMAIL)).thenReturn(List.of(n1, n2));
-
-        var result = notificationService.getMyNotifications();
-
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0).title()).isEqualTo("First");
-        assertThat(result.get(1).title()).isEqualTo("Second");
-        verify(notificationRepository).findAllByUserEmail(USER_EMAIL);
-    }
-
-    @Test
-    void getMyNotificationsShouldReturnEmptyListWhenNoNotifications() {
-        when(notificationRepository.findAllByUserEmail(USER_EMAIL)).thenReturn(List.of());
-
-        var result = notificationService.getMyNotifications();
-
-        assertThat(result).isEmpty();
-        verify(notificationRepository).findAllByUserEmail(USER_EMAIL);
-    }
-
     // ──── T5: updateNotification ────
 
     @Test
@@ -227,5 +199,203 @@ class NotificationServiceUnitTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting("statusCode")
                 .isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    // ──── searchNotifications ────
+
+    @Test
+    void searchNotificationsShouldReturnPaginatedResults() {
+        User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
+        owner.setId(1L);
+        Notification n1 = NotificationBuilder.aNotification()
+                .withUser(owner).withTitle("First").build();
+        n1.setId(1L);
+        Notification n2 = NotificationBuilder.aNotification()
+                .withUser(owner).withTitle("Second").build();
+        n2.setId(2L);
+
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Notification> mockPage = new PageImpl<>(List.of(n1, n2), pageable, 2);
+
+        when(notificationRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(mockPage);
+
+        NotificationCriteria criteria = new NotificationCriteria(null, null, null, null, null);
+        var result = notificationService.searchNotifications(criteria, pageable);
+
+        assertThat(result.getTotalElements()).isEqualTo(2);
+        assertThat(result.getContent()).hasSize(2);
+        assertThat(result.getContent().get(0).title()).isEqualTo("First");
+        assertThat(result.getContent().get(1).title()).isEqualTo("Second");
+    }
+
+    @Test
+    void searchNotificationsShouldApplyStatusFilter() {
+        User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
+        owner.setId(1L);
+        Notification n1 = NotificationBuilder.aNotification()
+                .withUser(owner).withStatus(Status.SENT).build();
+        n1.setId(1L);
+
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Notification> mockPage = new PageImpl<>(List.of(n1), pageable, 1);
+
+        when(notificationRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(mockPage);
+
+        NotificationCriteria criteria = new NotificationCriteria(Status.SENT, null, null, null, null);
+        var result = notificationService.searchNotifications(criteria, pageable);
+
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent().get(0).status()).isEqualTo("SENT");
+    }
+
+    @Test
+    void searchNotificationsShouldApplyChannelFilter() {
+        User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
+        owner.setId(1L);
+        Notification n1 = NotificationBuilder.aNotification()
+                .withUser(owner).withChannel(Channel.EMAIL).build();
+        n1.setId(1L);
+
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Notification> mockPage = new PageImpl<>(List.of(n1), pageable, 1);
+
+        when(notificationRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(mockPage);
+
+        NotificationCriteria criteria = new NotificationCriteria(null, Channel.EMAIL, null, null, null);
+        var result = notificationService.searchNotifications(criteria, pageable);
+
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent().get(0).channel()).isEqualTo("EMAIL");
+    }
+
+    @Test
+    void searchNotificationsShouldApplyTextSearch() {
+        User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
+        owner.setId(1L);
+        Notification n1 = NotificationBuilder.aNotification()
+                .withUser(owner).withTitle("Invoice #123").build();
+        n1.setId(1L);
+
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Notification> mockPage = new PageImpl<>(List.of(n1), pageable, 1);
+
+        when(notificationRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(mockPage);
+
+        NotificationCriteria criteria = new NotificationCriteria(null, null, null, null, "invoice");
+        var result = notificationService.searchNotifications(criteria, pageable);
+
+        assertThat(result.getTotalElements()).isEqualTo(1);
+    }
+
+    @Test
+    void searchNotificationsShouldApplyCombinedCriteria() {
+        User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
+        owner.setId(1L);
+        Notification n1 = NotificationBuilder.aNotification()
+                .withUser(owner)
+                .withStatus(Status.SENT)
+                .withChannel(Channel.EMAIL)
+                .withTitle("Invoice alert")
+                .build();
+        n1.setId(1L);
+
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Notification> mockPage = new PageImpl<>(List.of(n1), pageable, 1);
+
+        when(notificationRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(mockPage);
+
+        NotificationCriteria criteria = new NotificationCriteria(Status.SENT, Channel.EMAIL, null, null, "invoice");
+        var result = notificationService.searchNotifications(criteria, pageable);
+
+        assertThat(result.getTotalElements()).isEqualTo(1);
+    }
+
+    @Test
+    void searchNotificationsWithEmptyCriteriaShouldReturnAllPaginated() {
+        User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
+        owner.setId(1L);
+        Notification n1 = NotificationBuilder.aNotification()
+                .withUser(owner).build();
+        n1.setId(1L);
+        Notification n2 = NotificationBuilder.aNotification()
+                .withUser(owner).build();
+        n2.setId(2L);
+
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Notification> mockPage = new PageImpl<>(List.of(n1, n2), pageable, 2);
+
+        when(notificationRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(mockPage);
+
+        NotificationCriteria criteria = new NotificationCriteria(null, null, null, null, null);
+        var result = notificationService.searchNotifications(criteria, pageable);
+
+        assertThat(result.getTotalElements()).isEqualTo(2);
+        assertThat(result.getContent()).hasSize(2);
+    }
+
+    @Test
+    void searchNotificationsShouldCapPageSizeAt100() {
+        User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
+        owner.setId(1L);
+
+        Pageable largePageable = PageRequest.of(0, 500);
+        Pageable cappedPageable = PageRequest.of(0, 100);
+        Page<Notification> mockPage = new PageImpl<>(List.of(), cappedPageable, 0);
+
+        when(notificationRepository.findAll(any(Specification.class), eq(cappedPageable)))
+                .thenReturn(mockPage);
+
+        NotificationCriteria criteria = new NotificationCriteria(null, null, null, null, null);
+        var result = notificationService.searchNotifications(criteria, largePageable);
+
+        assertThat(result).isNotNull();
+        verify(notificationRepository).findAll(any(Specification.class), eq(cappedPageable));
+    }
+
+    @Test
+    void searchNotificationsShouldAlwaysIncludeOwnershipFilter() {
+        User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
+        owner.setId(1L);
+        Notification n1 = NotificationBuilder.aNotification()
+                .withUser(owner).build();
+        n1.setId(1L);
+
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Notification> mockPage = new PageImpl<>(List.of(n1), pageable, 1);
+
+        ArgumentCaptor<Specification<Notification>> specCaptor = ArgumentCaptor.forClass(Specification.class);
+
+        when(notificationRepository.findAll(specCaptor.capture(), any(Pageable.class)))
+                .thenReturn(mockPage);
+
+        NotificationCriteria criteria = new NotificationCriteria(Status.SENT, Channel.EMAIL, null, null, "test");
+        notificationService.searchNotifications(criteria, pageable);
+
+        Specification<Notification> capturedSpec = specCaptor.getValue();
+        assertThat(capturedSpec).isNotNull();
+
+        // Verify findAll was called exactly once
+        verify(notificationRepository).findAll(any(Specification.class), any(Pageable.class));
+    }
+
+    @Test
+    void searchNotificationsShouldReturnEmptyPageWhenNoResults() {
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Notification> emptyPage = Page.empty();
+
+        when(notificationRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(emptyPage);
+
+        NotificationCriteria criteria = new NotificationCriteria(Status.FAILED, null, null, null, null);
+        var result = notificationService.searchNotifications(criteria, pageable);
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isEqualTo(0);
     }
 }

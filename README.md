@@ -25,6 +25,8 @@ How to test:
 - **Ownership enforcement**: users can only access their own notifications (IDOR protection)
 - **Open/Closed Principle**: adding a new channel requires zero changes to existing code
 - **Swagger UI**: interactive API documentation at `/swagger-ui.html`
+- **Paginated notification search** with dynamic filtering by status, channel, date range, and text
+- **Dev seed data** — idempotent sample users and notifications on startup
 
 ## Quick Start
 
@@ -56,7 +58,7 @@ The API will be available at `http://localhost:8080`. Swagger UI at `http://loca
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/notifications` | List authenticated user's notifications | Bearer |
+| GET | `/notifications` | List authenticated user's notifications — paginated, supports `?status`, `?channel`, `?createdAfter`, `?createdBefore`, `?search` | Bearer |
 | GET | `/notifications/{id}` | Get notification by ID (own only) | Bearer |
 | POST | `/notifications` | Create notification (triggers simulated channel delivery) | Bearer |
 | PUT | `/notifications/{id}` | Update notification (title, content, attachmentIds) | Bearer |
@@ -128,7 +130,7 @@ POST /notifications
 ./gradlew test
 ```
 
-**Current coverage**: 120 tests (unit + integration), 0 failures.
+**Current coverage**: 141 tests (unit + integration), 0 failures.
 
 - **Unit**: `MockitoExtension`, no Spring context. Each sender and service tested in isolation.
 - **Integration**: `Testcontainers` (real PostgreSQL) + `WireMock` (external API) + `WebTestClient` (HTTP).
@@ -165,6 +167,12 @@ All dependencies use constructor injection (no `@Autowired`). Dependencies are e
 
 `PUT /notifications/{id}` uses `NotificationUpdateRequest`, a DTO that excludes the `channel` field. Once dispatched through a channel, it can't be changed — there's no business case for "un-sending."
 
+### Search ByCriteria with JPA Specifications
+
+`GET /notifications` uses `JpaSpecificationExecutor` to build composable, type-safe dynamic queries. Every query starts with an IDOR ownership filter (`belongsToUser`), and additional criteria are added only when the corresponding request parameter is present.
+
+Adding a new search criterion requires only a new static factory method in `NotificationSpecification` — zero changes to the controller, service, or existing predicates. This follows the same Open/Closed Principle used in the `ChannelSender` pattern.
+
 ### Integration Tests with Real Infrastructure
 
 Integration tests use real PostgreSQL via Testcontainers, WireMock for the external API, and `WebTestClient` for HTTP. The database is never mocked. Catches real SQL dialect differences and constraint issues.
@@ -195,6 +203,8 @@ Tradeoffs and improvements I'd make with more time:
 
 - **Database migrations**: replace `ddl-auto=update` with Flyway or Liquibase for production-grade schema versioning
 - **Seed data**: add a seed migration or data initializer so the app starts with sample users and notifications
+- **Error handling**: adopt RFC 7807 Problem Details (`application/problem+json`) for structured, machine-readable error responses
+- **Rate limiting**: protect auth endpoints against brute-force attacks
 
 ## Versioning
 

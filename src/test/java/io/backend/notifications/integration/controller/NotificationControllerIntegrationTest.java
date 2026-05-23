@@ -180,10 +180,11 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$").isArray()
-                .jsonPath("$.length()").isEqualTo(2)
-                .jsonPath("$[0].title").isEqualTo("First")
-                .jsonPath("$[1].title").isEqualTo("Second");
+                .jsonPath("$.content.length()").isEqualTo(2)
+                .jsonPath("$.content[0].title").isEqualTo("Second")
+                .jsonPath("$.content[1].title").isEqualTo("First")
+                .jsonPath("$.totalElements").isEqualTo(2)
+                .jsonPath("$.totalPages").isEqualTo(1);
     }
 
     @Test
@@ -197,8 +198,8 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$").isArray()
-                .jsonPath("$.length()").isEqualTo(0);
+                .jsonPath("$.content.length()").isEqualTo(0)
+                .jsonPath("$.totalElements").isEqualTo(0);
     }
 
     @Test
@@ -561,15 +562,15 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
                 .exchange()
                 .expectStatus().isCreated();
 
-        // Retrieve own notifications via new endpoint
+        // Retrieve own notifications via new endpoint — Page envelope
         webTestClient().get()
                 .uri("/notifications")
                 .header("Authorization", "Bearer " + token)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$").isArray()
-                .jsonPath("$[0].title").isEqualTo("My Notification");
+                .jsonPath("$.content[0].title").isEqualTo("My Notification")
+                .jsonPath("$.content.length()").isEqualTo(1);
     }
 
     @Test
@@ -755,5 +756,295 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
                 .expectStatus().isCreated()
                 .expectBody()
                 .jsonPath("$.channel").isEqualTo("EMAIL");
+    }
+
+    // ──── Pagination & Search ────
+
+    @Test
+    void shouldReturnDefaultPagination() {
+        UserBuilder builder = UserBuilder.aUser();
+        String token = registerAndLogin(builder);
+
+        // Create 3 notifications
+        for (int i = 0; i < 3; i++) {
+            NotificationRequest req = new NotificationRequest("Title " + i, "Content " + i, Channel.EMAIL, List.of());
+            webTestClient().post()
+                    .uri("/notifications")
+                    .header("Authorization", "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(req)
+                    .exchange()
+                    .expectStatus().isCreated();
+        }
+
+        webTestClient().get()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.content.length()").isEqualTo(3)
+                .jsonPath("$.totalElements").isEqualTo(3)
+                .jsonPath("$.totalPages").isEqualTo(1)
+                .jsonPath("$.number").isEqualTo(0)
+                .jsonPath("$.size").isEqualTo(20);
+    }
+
+    @Test
+    void shouldFilterByStatus() {
+        UserBuilder builder = UserBuilder.aUser();
+        String token = registerAndLogin(builder);
+
+        // Create 2 SENT notifications via API
+        NotificationRequest req1 = new NotificationRequest("Sent 1", "Content", Channel.EMAIL, List.of());
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(req1)
+                .exchange()
+                .expectStatus().isCreated();
+
+        NotificationRequest req2 = new NotificationRequest("Sent 2", "Content", Channel.SMS, List.of());
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(req2)
+                .exchange()
+                .expectStatus().isCreated();
+
+        webTestClient().get()
+                .uri("/notifications?status=SENT")
+                .header("Authorization", "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.content.length()").isEqualTo(2)
+                .jsonPath("$.content[0].status").isEqualTo("SENT")
+                .jsonPath("$.content[1].status").isEqualTo("SENT");
+    }
+
+    @Test
+    void shouldFilterByChannel() {
+        UserBuilder builder = UserBuilder.aUser();
+        String token = registerAndLogin(builder);
+
+        // Create EMAIL notification
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NotificationRequest("Email msg", "Body", Channel.EMAIL, List.of()))
+                .exchange()
+                .expectStatus().isCreated();
+
+        // Create SMS notification
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NotificationRequest("SMS msg", "Body", Channel.SMS, List.of()))
+                .exchange()
+                .expectStatus().isCreated();
+
+        webTestClient().get()
+                .uri("/notifications?channel=EMAIL")
+                .header("Authorization", "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.content.length()").isEqualTo(1)
+                .jsonPath("$.content[0].channel").isEqualTo("EMAIL");
+    }
+
+    @Test
+    void shouldSearchByText() {
+        UserBuilder builder = UserBuilder.aUser();
+        String token = registerAndLogin(builder);
+
+        // Create notification with searchable content
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NotificationRequest("Invoice Reminder", "Your invoice is ready", Channel.EMAIL, List.of()))
+                .exchange()
+                .expectStatus().isCreated();
+
+        // Create another notification without the keyword
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NotificationRequest("Welcome", "Hello there", Channel.SMS, List.of()))
+                .exchange()
+                .expectStatus().isCreated();
+
+        webTestClient().get()
+                .uri("/notifications?search=invoice")
+                .header("Authorization", "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.content.length()").isEqualTo(1)
+                .jsonPath("$.content[0].title").isEqualTo("Invoice Reminder");
+    }
+
+    @Test
+    void shouldApplyCombinedCriteria() {
+        UserBuilder builder = UserBuilder.aUser();
+        String token = registerAndLogin(builder);
+
+        // SENT + EMAIL with keyword
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NotificationRequest("Invoice Alert", "Invoice content", Channel.EMAIL, List.of()))
+                .exchange()
+                .expectStatus().isCreated();
+
+        // SENT + EMAIL without keyword
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NotificationRequest("Welcome", "Hello", Channel.EMAIL, List.of()))
+                .exchange()
+                .expectStatus().isCreated();
+
+        // SENT + SMS with keyword
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NotificationRequest("Invoice SMS", "Invoice via SMS", Channel.SMS, List.of()))
+                .exchange()
+                .expectStatus().isCreated();
+
+        webTestClient().get()
+                .uri("/notifications?status=SENT&channel=EMAIL&search=invoice")
+                .header("Authorization", "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.content.length()").isEqualTo(1)
+                .jsonPath("$.content[0].title").isEqualTo("Invoice Alert")
+                .jsonPath("$.content[0].status").isEqualTo("SENT")
+                .jsonPath("$.content[0].channel").isEqualTo("EMAIL");
+    }
+
+    @Test
+    void shouldReturnEmptyResultForNonMatchingCriteria() {
+        UserBuilder builder = UserBuilder.aUser();
+        String token = registerAndLogin(builder);
+
+        // Create a notification
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NotificationRequest("Title", "Content", Channel.EMAIL, List.of()))
+                .exchange()
+                .expectStatus().isCreated();
+
+        webTestClient().get()
+                .uri("/notifications?status=FAILED")
+                .header("Authorization", "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.content.length()").isEqualTo(0)
+                .jsonPath("$.totalElements").isEqualTo(0);
+    }
+
+    @Test
+    void shouldEnforceCrossUserIsolation() {
+        // User A
+        UserBuilder builderA = UserBuilder.aUser();
+        String tokenA = registerAndLogin(builderA);
+
+        // User B
+        UserBuilder builderB = UserBuilder.aUser();
+        String tokenB = registerAndLogin(builderB);
+
+        // User A creates notification
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + tokenA)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NotificationRequest("A's Notification", "A's content", Channel.EMAIL, List.of()))
+                .exchange()
+                .expectStatus().isCreated();
+
+        // User B creates notification
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + tokenB)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NotificationRequest("B's Notification", "B's content", Channel.EMAIL, List.of()))
+                .exchange()
+                .expectStatus().isCreated();
+
+        // User A searches — should only see own notifications
+        webTestClient().get()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + tokenA)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.content.length()").isEqualTo(1)
+                .jsonPath("$.content[0].title").isEqualTo("A's Notification");
+    }
+
+    @Test
+    void shouldReturnEmptyPageBeyondLast() {
+        UserBuilder builder = UserBuilder.aUser();
+        String token = registerAndLogin(builder);
+
+        // Create 1 notification
+        webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new NotificationRequest("Title", "Content", Channel.EMAIL, List.of()))
+                .exchange()
+                .expectStatus().isCreated();
+
+        webTestClient().get()
+                .uri("/notifications?page=99")
+                .header("Authorization", "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.content.length()").isEqualTo(0)
+                .jsonPath("$.totalElements").isEqualTo(1);
+    }
+
+    @Test
+    void shouldCapPageSizeAt100() {
+        UserBuilder builder = UserBuilder.aUser();
+        String token = registerAndLogin(builder);
+
+        // Create 3 notifications (fewer than 100 to verify max ceiling)
+        for (int i = 0; i < 3; i++) {
+            webTestClient().post()
+                    .uri("/notifications")
+                    .header("Authorization", "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(new NotificationRequest("Title " + i, "Content " + i, Channel.EMAIL, List.of()))
+                    .exchange()
+                    .expectStatus().isCreated();
+        }
+
+        // Request size=500 — should be capped to 100
+        webTestClient().get()
+                .uri("/notifications?size=500")
+                .header("Authorization", "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.size").isEqualTo(100);
     }
 }
