@@ -32,6 +32,10 @@ dependencies {
 	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.5'
+    implementation 'com.bucket4j:bucket4j_jdk17-core:8.18.0'
+
+    // Configuration binding
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
 
     // Testing - Spring Boot
     testImplementation 'org.springframework.boot:spring-boot-starter-test'

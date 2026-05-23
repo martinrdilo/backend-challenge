@@ -271,9 +271,12 @@ http
     )
     .exceptionHandling(ex -> ex.authenticationEntryPoint(
             (request, response, authException) -> {
+                ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+                problem.setTitle("Unauthorized");
+                problem.setDetail("Authentication is required to access this resource");
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-                response.getWriter().write("{\"error\": \"Unauthorized\"}");
+                response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+                response.getWriter().write(objectMapper.writeValueAsString(problem));
             }
     ))
     .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
@@ -325,6 +328,7 @@ Con `SessionCreationPolicy.STATELESS`, Spring Security nunca crea ni usa una `Ht
 | 201 Created | Registro exitoso. Body: `{"token": "eyJ..."}` |
 | 400 Bad Request | Validación fallida (`@NotBlank`, `@Email`, `@Size`) |
 | 409 Conflict | Email ya registrado |
+| 429 Too Many Requests | Límite de requests excedido (3 req/min por IP) |
 
 ```mermaid
 sequenceDiagram
@@ -370,6 +374,7 @@ sequenceDiagram
 | 200 OK | Login exitoso. Body: `{"token": "eyJ..."}` |
 | 400 Bad Request | Validación fallida (`@NotBlank`, `@Email`) |
 | 401 Unauthorized | Credenciales incorrectas o email desconocido |
+| 429 Too Many Requests | Límite de requests excedido (5 req/min por IP) |
 
 ```mermaid
 sequenceDiagram
@@ -465,6 +470,43 @@ Los tests de controller incluyen casos de acceso no autorizado en cada endpoint 
 - **401 sin token**: verifican que el `JwtAuthFilter` rechaza requests sin header `Authorization`.
 - **401 con credenciales incorrectas**: `AuthControllerIntegrationTest` verifica que `AuthenticationManager` devuelve 401 ante password o email incorrectos.
 - **403 cross-user**: `NotificationControllerIntegrationTest.shouldReturn403WhenAccessingAnotherUsersNotifications()` crea dos usuarios distintos y verifica que el usuario A no puede ver las notificaciones del usuario B.
+
+---
+
+## 10. Protección contra fuerza bruta (Rate Limiting)
+
+La aplicación implementa rate limiting en los endpoints de autenticación usando el algoritmo token-bucket de Bucket4j. Cada IP tiene su propio bucket con límites independientes para login y registro.
+
+### Colocación en la cadena de filtros
+
+El `RateLimitFilter` extiende `OncePerRequestFilter` y se registra **antes** que `JwtAuthFilter` mediante `addFilterBefore`. Esto garantiza que una request bloqueada por rate limiting nunca llegue a la lógica de validación JWT ni a los controllers.
+
+### Límites por defecto
+
+| Endpoint | Límite | Ventana |
+|---|---|---|
+| POST /auth/login | 5 requests | 1 minuto |
+| POST /auth/register | 3 requests | 1 minuto |
+
+### Detección de IP
+
+El filtro intenta obtener la IP real del cliente en este orden:
+1. Header `X-Forwarded-For` (para requests detrás de un proxy/load balancer)
+2. `request.getRemoteAddr()` (fallback directo)
+
+### Respuesta 429
+
+Cuando un bucket está vacío, el filtro responde inmediatamente con:
+- Status: **429 Too Many Requests**
+- Content-Type: `application/problem+json`
+- Body: `ProblemDetail` con título y detalle del límite excedido
+- Header `Retry-After`: segundos restantes hasta que haya tokens disponibles
+
+### Almacenamiento
+
+Los buckets se mantienen en memoria (`Map<String, Bucket>`). Cada instancia de la aplicación maneja su propio estado. En un entorno con múltiples réplicas, esto significa que los límites son **por instancia**, no globales. Para un rate limiting global se requeriría un backend compartido como Redis.
+
+---
 
 ### Por qué los tests usan el flujo real de JWT
 

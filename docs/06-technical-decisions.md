@@ -121,3 +121,41 @@ La base de datos usa **Flyway** con PostgreSQL para manejar el schema de forma v
 
 - **`validate` en prod**: Hibernate compara entidades con la DB al iniciar. Si hay drift, la app no arranca — falla temprano, con error claro.
 - **`none` en tests**: Flyway es la única fuente de verdad del schema. Si la migración está rota, los tests fallan en CI antes de llegar a producción. Con `create-drop`, Hibernate hubiera "arreglado" el bug silenciosamente.
+
+---
+
+## 9. RFC 7807 Problem Details para Manejo de Errores
+
+Todas las respuestas de error de la API usan `ProblemDetail` de Spring Boot 3 en lugar de `Map<String, Object>` construidos manualmente.
+
+**Por qué**:
+- **Nativo en Spring Boot 3**: `ProblemDetail` y `ResponseEntityExceptionHandler` vienen en `spring-web` — no requiere dependencias adicionales.
+- **Formato estándar IETF**: los clientes pueden parsear errores sin adivinar la estructura del JSON. Los campos `type`, `title`, `status`, y `detail` son predecibles.
+- **Errores de campo preservados**: las validaciones de Bean Validation (`@NotBlank`, `@Email`, etc.) se acumulan en una lista bajo el campo `errors` del `ProblemDetail`.
+- **Stack trace nunca expuesta**: `ResponseEntityExceptionHandler` maneja la conversión a `ProblemDetail` sin incluir información interna del servidor.
+
+El `GlobalExceptionHandler` extiende `ResponseEntityExceptionHandler` y sobrescribe los métodos correspondientes para 400, 401, 403, 404, 409, 429, y 500. El entry point de autenticación en `SecurityConfig` también emite `ProblemDetail` en lugar de JSON hardcodeado.
+
+---
+
+## 10. Bucket4j para Rate Limiting en Auth
+
+La protección de endpoints de autenticación usa Bucket4j con token-bucket en memoria.
+
+**Por qué token-bucket en memoria (y no Redis)**:
+- **Simplicidad**: para un challenge técnico, una dependencia adicional (Redis + lettuce) agrega complejidad de infraestructura sin justificación de escala real.
+- **Overhead aceptable**: los buckets son objetos livianos (`Map<String, Bucket>`). La sobrecarga de memoria es mínima para el volumen esperado.
+- **Tradeoff documentado**: el rate limiting es **por instancia**. En múltiples réplicas, un atacante podría distribuir requests entre instancias. Esto es aceptable para el scope actual y se documenta explícitamente.
+
+**Por qué antes de JwtAuthFilter en la cadena**:
+- Una request bloqueada por rate limiting no debería ejecutar lógica de parsing ni validación de JWT. Rechazar lo antes posible reduce carga de CPU y evita side effects.
+
+**Parámetros por defecto**:
+- Login: 5 tokens por minuto por IP
+- Register: 3 tokens por minuto por IP
+
+**Manejo de X-Forwarded-For**:
+- El filtro lee el header `X-Forwarded-For` antes que `getRemoteAddr()` para soportar proxies reversos y load balancers. Si el header está presente, se usa la primera IP de la lista (la más cercana al cliente).
+
+**Retry-After**:
+- Cuando un bucket está vacío, la respuesta 429 incluye un header `Retry-After` con los segundos restantes hasta que el próximo token esté disponible. Esto permite a los clientes backoff de forma determinista.

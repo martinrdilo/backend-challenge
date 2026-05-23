@@ -33,3 +33,10 @@ springdoc:
     enabled: false
   swagger-ui:
     enabled: false
+
+# High rate limits for tests — prevent test flakiness from shared in-memory buckets
+# RateLimitIntegrationTest overrides these via @SpringBootTest(properties = {...})
+rate-limit:
+  login-attempts-per-minute: 10000
+  register-attempts-per-minute: 10000
+  window-minutes: 1

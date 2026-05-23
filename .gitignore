@@ -38,6 +38,8 @@ out/
 
 ### SDD ###
 .atl/
+AGENTS.md
+skills/
 
 ### Environment files ###
 .env
