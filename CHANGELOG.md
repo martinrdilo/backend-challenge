@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-05-23
+
+### Added
+- RFC 7807 Problem Details error format (`application/problem+json`) for all error responses
+- Bucket4j rate limiting on `POST /auth/login` (5/min) and `POST /auth/register` (3/min) per IP
+- Paginated notification search with JPA Specifications (filter by status, channel, date range, text)
+- Dev seed data via `CommandLineRunner` — 2 users + 5 notifications, idempotent, `@Profile("!test")`
+- Spring Retry with exponential backoff on `ChannelDispatcher.dispatch()` (3 attempts, 1s/2s/4s)
+- Async event-driven dispatch — `POST /notifications` returns `PENDING` immediately, `@Async` listener handles delivery
+- `@ConfigurationPropertiesScan` for type-safe configuration binding
+- Awaitility for async integration test assertions
+
+### Fixed
+- Removed dead `getMyNotifications()` method to prevent IDOR bypass
+- Made seed data idempotent for notifications via `notificationRepository.count()` guard
+- Updated retry tests to call `ChannelDispatcher.dispatch()` directly for async compatibility
+
+### Documentation
+- Added sections 9–15 to `docs/05-technical-decisions.md` covering all new architectural decisions
+- Renamed `docs/06-technical-decisions.md` → `docs/05-technical-decisions.md` for consecutive numbering
+- Updated test count and API contract in README
+
 ## [0.1.0] - 2026-05-19
 
 ### Added

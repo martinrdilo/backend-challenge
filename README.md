@@ -60,7 +60,7 @@ The API will be available at `http://localhost:8080`. Swagger UI at `http://loca
 |--------|------|-------------|------|
 | GET | `/notifications` | List authenticated user's notifications — paginated, supports `?status`, `?channel`, `?createdAfter`, `?createdBefore`, `?search` | Bearer |
 | GET | `/notifications/{id}` | Get notification by ID (own only) | Bearer |
-| POST | `/notifications` | Create notification (triggers simulated channel delivery) | Bearer |
+| POST | `/notifications` | Create notification (returns `PENDING`, dispatches asynchronously) | Bearer |
 | PUT | `/notifications/{id}` | Update notification (title, content, attachmentIds) | Bearer |
 | DELETE | `/notifications/{id}` | Delete notification (own only) | Bearer |
 
@@ -84,7 +84,7 @@ POST /notifications
   "title": "System Alert",
   "content": "Server requires scheduled maintenance.",
   "channel": "EMAIL",
-  "status": "SENT",
+  "status": "PENDING",
   "createdAt": "2026-05-10T01:30:00",
   "userId": 1,
   "attachments": [
@@ -130,7 +130,7 @@ POST /notifications
 ./gradlew test
 ```
 
-**Current coverage**: 141 tests (unit + integration), 0 failures.
+**Current coverage**: 160 tests (unit + integration), 0 failures.
 
 - **Unit**: `MockitoExtension`, no Spring context. Each sender and service tested in isolation.
 - **Integration**: `Testcontainers` (real PostgreSQL) + `WireMock` (external API) + `WebTestClient` (HTTP).
@@ -185,6 +185,10 @@ Error responses follow the IETF RFC 7807 standard (`application/problem+json`). 
 
 A Bucket4j token-bucket filter protects authentication endpoints from brute-force attacks. The filter runs before `JwtAuthFilter` and enforces per-IP limits: 5 login requests per minute and 3 register requests per minute. Excess requests receive `429 Too Many Requests` with a `Retry-After` header. IP addresses are resolved from `X-Forwarded-For` when present, falling back to the remote address. Storage is in-memory and per-instance.
 
+### Async Event-Driven Dispatch
+
+`POST /notifications` returns immediately with `PENDING` status, decoupling the HTTP response from channel delivery. A Spring `ApplicationEventPublisher` fires a `NotificationCreatedEvent` after persistence, and an `@Async` listener (`NotificationDispatchListener`) handles the actual dispatch on a separate thread with its own transaction (`REQUIRES_NEW`). A bounded `ThreadPoolTaskExecutor` (core=2, max=4, queue=25) prevents resource exhaustion. Clients poll `GET /notifications/{id}` for the final `SENT` or `FAILED` status.
+
 > Full reasoning behind each decision → [`docs/05-technical-decisions.md`](docs/05-technical-decisions.md)
 
 ## Documentation
@@ -195,16 +199,15 @@ Detailed docs in [`docs/`](docs/):
 - [`02-channel-sending-and-crud.md`](docs/02-channel-sending-and-crud.md) — Strategy pattern for channel dispatch + CRUD operations
 - [`03-testing-infrastructure.md`](docs/03-testing-infrastructure.md) — Testcontainers, WireMock, and test architecture
 - [`04-testing-architecture-diagram.md`](docs/04-testing-architecture-diagram.md) — Visual overview of the test setup
-- [`06-technical-decisions.md`](docs/05-technical-decisions.md) — Detailed reasoning behind all architectural decisions
+- [`05-technical-decisions.md`](docs/05-technical-decisions.md) — Detailed reasoning behind all architectural decisions
 
 ## Areas to Improve
 
 Tradeoffs and improvements I'd make with more time:
 
-- **Database migrations**: replace `ddl-auto=update` with Flyway or Liquibase for production-grade schema versioning
-- **Seed data**: add a seed migration or data initializer so the app starts with sample users and notifications
-- **Error handling**: adopt RFC 7807 Problem Details (`application/problem+json`) for structured, machine-readable error responses
-- **Rate limiting**: protect auth endpoints against brute-force attacks
+- **Database performance**: add indexes on `notifications(user_id, status, channel, created_at)` for combined criteria queries
+- **Observability**: add structured logging (JSON) and retry metrics for the async dispatch listener
+- **Concurrent load testing**: verify thread pool behavior under 10+ simultaneous POST requests
 
 ## Versioning
 
