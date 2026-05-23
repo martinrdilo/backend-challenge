@@ -3,57 +3,50 @@ package io.backend.notifications.unit.config;
 import io.backend.notifications.config.RateLimitConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.test.context.TestPropertySource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(properties = {
-        "rate-limit.login-attempts-per-minute=5",
-        "rate-limit.register-attempts-per-minute=3",
-        "rate-limit.window-minutes=1"
-})
-@SuppressWarnings("unused")
 class RateLimitConfigTest {
 
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16-alpine")
-                    .withDatabaseName("notification_test_db")
-                    .withUsername("test")
-                    .withPassword("test");
+    private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+            .withUserConfiguration(EnableProperties.class)
+            .withPropertyValues(
+                    "rate-limit.login-attempts-per-minute=5",
+                    "rate-limit.register-attempts-per-minute=3",
+                    "rate-limit.window-minutes=1"
+            );
 
-    static {
-        POSTGRES.start();
+    @EnableConfigurationProperties(RateLimitConfig.class)
+    static class EnableProperties {
     }
-
-    @DynamicPropertySource
-    static void overrideProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
-    }
-
-    @Autowired
-    private RateLimitConfig rateLimitConfig;
 
     @Test
     @DisplayName("should bind login-attempts-per-minute from configuration")
     void shouldBindLoginAttemptsPerMinute() {
-        assertThat(rateLimitConfig.loginAttemptsPerMinute()).isEqualTo(5);
+        contextRunner.run(ctx -> {
+            RateLimitConfig config = ctx.getBean(RateLimitConfig.class);
+            assertThat(config.loginAttemptsPerMinute()).isEqualTo(5);
+        });
     }
 
     @Test
     @DisplayName("should bind register-attempts-per-minute from configuration")
     void shouldBindRegisterAttemptsPerMinute() {
-        assertThat(rateLimitConfig.registerAttemptsPerMinute()).isEqualTo(3);
+        contextRunner.run(ctx -> {
+            RateLimitConfig config = ctx.getBean(RateLimitConfig.class);
+            assertThat(config.registerAttemptsPerMinute()).isEqualTo(3);
+        });
     }
 
     @Test
     @DisplayName("should bind window-minutes from configuration")
     void shouldBindWindowMinutes() {
-        assertThat(rateLimitConfig.windowMinutes()).isEqualTo(1);
+        contextRunner.run(ctx -> {
+            RateLimitConfig config = ctx.getBean(RateLimitConfig.class);
+            assertThat(config.windowMinutes()).isEqualTo(1);
+        });
     }
 }
