@@ -1,20 +1,18 @@
 package io.backend.notifications.unit.controller;
 
+import io.backend.notifications.controller.GlobalExceptionHandler;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.test.context.support.WithMockUser;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -25,15 +23,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
 @DisplayName("GlobalExceptionHandler")
 @SuppressWarnings("unused")
 class GlobalExceptionHandlerTest {
 
-    @Autowired
     private MockMvc mockMvc;
+
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders
+                .standaloneSetup(new TestController())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+    }
 
     @RestController
     @SuppressWarnings("unused")
@@ -68,7 +70,6 @@ class GlobalExceptionHandlerTest {
 
     @Nested
     @DisplayName("Validation error (400)")
-    @WithMockUser
     class ValidationErrors {
 
         @Test
@@ -94,7 +95,6 @@ class GlobalExceptionHandlerTest {
 
     @Nested
     @DisplayName("Not found (404)")
-    @WithMockUser
     class NotFoundErrors {
 
         @Test
@@ -113,7 +113,6 @@ class GlobalExceptionHandlerTest {
 
     @Nested
     @DisplayName("Conflict (409)")
-    @WithMockUser
     class ConflictErrors {
 
         @Test
@@ -132,7 +131,6 @@ class GlobalExceptionHandlerTest {
 
     @Nested
     @DisplayName("Server error (500)")
-    @WithMockUser
     class ServerErrors {
 
         @Test

@@ -44,3 +44,4 @@ skills/
 ### Environment files ###
 .env
 .env.test
+logs/
