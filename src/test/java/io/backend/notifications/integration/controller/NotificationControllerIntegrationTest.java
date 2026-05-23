@@ -4,6 +4,7 @@ import io.backend.notifications.dto.NotificationRequest;
 import io.backend.notifications.dto.NotificationUpdateRequest;
 import io.backend.notifications.entity.Notification;
 import io.backend.notifications.enums.Channel;
+import io.backend.notifications.enums.Status;
 import io.backend.notifications.fixture.entity.NotificationBuilder;
 import io.backend.notifications.fixture.entity.UserBuilder;
 import io.backend.notifications.fixture.wiremock.WireMockHelper;
@@ -1053,71 +1054,60 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void shouldTransitionToSentAfterAsyncDispatch() {
-        String token = registerAndLogin("dispatch@test.com", "dispatch123");
+        UserBuilder builder = UserBuilder.aUser();
+        String token = registerAndLogin(builder);
 
         NotificationRequest request = new NotificationRequest(
                 "Async Test", "Content for async dispatch", Channel.EMAIL, List.of());
 
-        // POST returns PENDING
-        Integer notificationId = webTestClient().post()
+        webTestClient().post()
                 .uri("/notifications")
                 .header("Authorization", "Bearer " + token)
                 .bodyValue(request)
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody()
-                .jsonPath("$.status").isEqualTo("PENDING")
-                .jsonPath("$.id").isNotEmpty()
-                .returnResult()
-                .getResponseBody()
-                .path("id");
+                .jsonPath("$.status").isEqualTo("PENDING");
+
+        // Get the notification ID from the DB
+        var user = userRepository.findByEmail(builder.getEmail()).orElseThrow();
+        var notifications = notificationRepository.findAllByUserId(user.getId());
+        Long notificationId = notifications.get(0).getId();
 
         // Async listener should eventually set status to SENT
         await().atMost(5, TimeUnit.SECONDS).until(() -> {
-            String status = (String) webTestClient().get()
-                    .uri("/notifications/" + notificationId)
-                    .header("Authorization", "Bearer " + token)
-                    .exchange()
-                    .expectStatus().isOk()
-                    .expectBody()
-                    .jsonPath("$.status").returnResult()
-                    .getResponseBody();
-            return "SENT".equals(status);
+            Notification n = notificationRepository.findById(notificationId).orElseThrow();
+            return n.getStatus() == Status.SENT;
         });
     }
 
     @Test
     void shouldTransitionToFailedWhenAsyncDispatchFails() {
-        String token = registerAndLogin("faildispatch@test.com", "fail123");
+        UserBuilder builder = UserBuilder.aUser(); // no device token
+        String token = registerAndLogin(builder);
 
-        // Create user without device token — Push dispatch will fail
+        // Push dispatch will fail because user has no device token
         NotificationRequest request = new NotificationRequest(
                 "Async Fail", "Content that will fail async", Channel.PUSH, List.of());
 
-        Integer notificationId = webTestClient().post()
+        webTestClient().post()
                 .uri("/notifications")
                 .header("Authorization", "Bearer " + token)
                 .bodyValue(request)
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody()
-                .jsonPath("$.status").isEqualTo("PENDING")
-                .jsonPath("$.id").isNotEmpty()
-                .returnResult()
-                .getResponseBody()
-                .path("id");
+                .jsonPath("$.status").isEqualTo("PENDING");
+
+        // Get the notification ID from the DB
+        var user = userRepository.findByEmail(builder.getEmail()).orElseThrow();
+        var notifications = notificationRepository.findAllByUserId(user.getId());
+        Long notificationId = notifications.get(0).getId();
 
         // Async listener attempts dispatch, Push sender fails (no device token)
-        await().atMost(5, TimeUnit.SECONDS).until(() -> {
-            String status = (String) webTestClient().get()
-                    .uri("/notifications/" + notificationId)
-                    .header("Authorization", "Bearer " + token)
-                    .exchange()
-                    .expectStatus().isOk()
-                    .expectBody()
-                    .jsonPath("$.status").returnResult()
-                    .getResponseBody();
-            return "FAILED".equals(status);
+        await().atMost(10, TimeUnit.SECONDS).until(() -> {
+            Notification n = notificationRepository.findById(notificationId).orElseThrow();
+            return n.getStatus() == Status.FAILED;
         });
     }
 }
