@@ -52,6 +52,9 @@ dependencies {
 
     // Testing - WireMock (mock de APIs externas)
     testImplementation 'org.wiremock:wiremock-standalone:3.10.0'
+
+    // Testing - Awaitility (async assertion polling)
+    testImplementation 'org.awaitility:awaitility:4.2.2'
 }
 
 tasks.named('test') {

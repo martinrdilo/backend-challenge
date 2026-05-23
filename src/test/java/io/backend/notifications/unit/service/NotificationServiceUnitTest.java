@@ -12,7 +12,8 @@ import io.backend.notifications.fixture.entity.UserBuilder;
 import io.backend.notifications.repository.NotificationRepository;
 import io.backend.notifications.repository.UserRepository;
 import io.backend.notifications.service.NotificationService;
-import io.backend.notifications.service.channel.ChannelDispatcher;
+import io.backend.notifications.event.NotificationCreatedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,7 +58,7 @@ class NotificationServiceUnitTest {
     private ExternalMediaClient externalMediaClient;
 
     @Mock
-    private ChannelDispatcher channelDispatcher;
+    private ApplicationEventPublisher eventPublisher;
 
     @Mock
     private SecurityContext securityContext;

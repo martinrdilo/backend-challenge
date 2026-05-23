@@ -16,6 +16,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import static org.awaitility.Awaitility.await;
 
 /**
  * Integration tests for NotificationController with JWT authentication.
@@ -97,7 +100,7 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody()
-                .jsonPath("$.status").isEqualTo("SENT");
+                .jsonPath("$.status").isEqualTo("PENDING");
     }
 
     @Test
@@ -121,7 +124,7 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody()
-                .jsonPath("$.status").isEqualTo("SENT");
+                .jsonPath("$.status").isEqualTo("PENDING");
     }
 
     @Test
@@ -144,7 +147,7 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody()
-                .jsonPath("$.status").isEqualTo("SENT");
+                .jsonPath("$.status").isEqualTo("PENDING");
     }
 
     // ──── T7: GET /notifications (list own) ────
@@ -1046,5 +1049,75 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.size").isEqualTo(100);
+    }
+
+    @Test
+    void shouldTransitionToSentAfterAsyncDispatch() {
+        String token = registerAndLogin("dispatch@test.com", "dispatch123");
+
+        NotificationRequest request = new NotificationRequest(
+                "Async Test", "Content for async dispatch", Channel.EMAIL, List.of());
+
+        // POST returns PENDING
+        Integer notificationId = webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .bodyValue(request)
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo("PENDING")
+                .jsonPath("$.id").isNotEmpty()
+                .returnResult()
+                .getResponseBody()
+                .path("id");
+
+        // Async listener should eventually set status to SENT
+        await().atMost(5, TimeUnit.SECONDS).until(() -> {
+            String status = (String) webTestClient().get()
+                    .uri("/notifications/" + notificationId)
+                    .header("Authorization", "Bearer " + token)
+                    .exchange()
+                    .expectStatus().isOk()
+                    .expectBody()
+                    .jsonPath("$.status").returnResult()
+                    .getResponseBody();
+            return "SENT".equals(status);
+        });
+    }
+
+    @Test
+    void shouldTransitionToFailedWhenAsyncDispatchFails() {
+        String token = registerAndLogin("faildispatch@test.com", "fail123");
+
+        // Create user without device token — Push dispatch will fail
+        NotificationRequest request = new NotificationRequest(
+                "Async Fail", "Content that will fail async", Channel.PUSH, List.of());
+
+        Integer notificationId = webTestClient().post()
+                .uri("/notifications")
+                .header("Authorization", "Bearer " + token)
+                .bodyValue(request)
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo("PENDING")
+                .jsonPath("$.id").isNotEmpty()
+                .returnResult()
+                .getResponseBody()
+                .path("id");
+
+        // Async listener attempts dispatch, Push sender fails (no device token)
+        await().atMost(5, TimeUnit.SECONDS).until(() -> {
+            String status = (String) webTestClient().get()
+                    .uri("/notifications/" + notificationId)
+                    .header("Authorization", "Bearer " + token)
+                    .exchange()
+                    .expectStatus().isOk()
+                    .expectBody()
+                    .jsonPath("$.status").returnResult()
+                    .getResponseBody();
+            return "FAILED".equals(status);
+        });
     }
 }

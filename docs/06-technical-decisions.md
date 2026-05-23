@@ -205,3 +205,65 @@ Cada criterio es un método factory estático que devuelve `Specification<Notifi
 - **Null-safe**: los factories devuelven `null` cuando el parámetro es ausente, y `Specification.where()` los ignora automáticamente.
 - **IDOR ownership filter**: el predicado `belongsToUser` se aplica como base de **todas** las queries. Ninguna búsqueda dinámica puede exponer notificaciones de otro usuario.
 - **Type-safe**: los nombres de campo se referencian vía metamodel o strings estáticas, evitando errores de typo en queries JPQL concatenadas.
+
+---
+
+## 14. Spring Retry para Channel Dispatch con Backoff Exponencial
+
+El `@Retryable` se aplica en `ChannelDispatcher.dispatch()` en lugar de en cada `ChannelSender` individual porque la anotación requiere una invocación cross-bean para que el proxy de AOP de Spring intercepte el método. Colocarla en el `ChannelDispatcher` centraliza la política de reintento, evita duplicar lógica en cada implementación de canal (DRY) y asegura que cualquier falla transitoria en cualquier sender sea manejada de forma uniforme. Se excluye explícitamente `IllegalStateException` porque una sola clase cubre tanto errores de configuración ("no sender found") como errores de validación ("null email/token"), los cuales son fallas deterministas que no se resuelven con reintentos. Los parámetros de backoff exponencial se configuran con `maxAttempts=3`, `delay=1000ms` y `multiplier=2.0`, produciendo reintentos a los 1s, 2s y 4s después del intento inicial.
+
+No se define un método `@Recover` porque el bloque `catch` existente en `NotificationService` ya actualiza el estado de la notificación a `FAILED`, lo cual preserva el Single Responsibility Principle al evitar inyectar `NotificationRepository` dentro de `ChannelDispatcher`. Las expresiones SpEL `#{...}` en la anotación resuelven valores desde `application.yml`, permitiendo ajustar `maxAttempts` y `delay` por entorno sin recompilar. Para testing, una `@TestConfiguration` provee un `ChannelSender` mock anotado con `@Primary` y el perfil de test sobreescribe el delay a `0ms`, logrando ejecuciones en sub-milisegundos. La estrategia bloquea el thread HTTP hasta ~7s en el peor caso, lo cual es aceptable para el endpoint de creación de notificaciones; la evolución hacia dispatch asincrónico queda como trabajo futuro.
+
+---
+
+## 15. Desacoplamiento Asincrónico con Spring Events + @Async
+
+El endpoint `POST /notifications` ahora devuelve la respuesta HTTP inmediatamente con estado `PENDING`, mientras que el envío real por canal se ejecuta de forma asincrónica en un thread separado. Esto se implementa con `ApplicationEventPublisher`, `@EventListener` y `@Async`.
+
+### Arquitectura
+
+1. `NotificationService.createNotification()` guarda la notificación en la base de datos y publica un `NotificationCreatedEvent`.
+2. `NotificationDispatchListener` escucha el evento con `@EventListener` y `@Async`, delegando a `ChannelDispatcher.dispatch()`.
+3. El listener corre en su propia transacción con `@Transactional(propagation = REQUIRES_NEW)`, independiente de la transacción del publisher.
+
+### Por qué ApplicationEventPublisher + @EventListener + @Async en lugar de @Async en el service method
+
+- **Separación de responsabilidades**: el service se ocupa de la persistencia; el listener se ocupa del envío. Se pueden testear de forma independiente.
+- **Testabilidad**: en tests unitarios se puede mockear el `ApplicationEventPublisher` y verificar que se publica el evento correcto, sin necesidad de ejecutar lógica asincrónica real.
+- **Extensibilidad**: otros componentes pueden escuchar `NotificationCreatedEvent` sin modificar el service (ej. métricas, audit logging).
+- **Desacoplamiento**: el service no conoce la existencia del dispatcher ni de los senders.
+
+### Por qué REQUIRES_NEW en el listener
+
+El listener necesita su propia transacción porque:
+- La transacción del publisher ya está committeada cuando el evento se publica (dentro del mismo método, antes del `return`).
+- Si el envío por canal falla, el listener actualiza el estado de la notificación a `FAILED`. Con `REQUIRES_NEW`, esta actualización ocurre en una transacción separada, evitando que un rollback del envío afecte el estado persistido.
+- Sin propagación `REQUIRES_NEW`, el listener compartiría (o heredaría) la transacción del publisher, lo cual generaría problemas de sincronización en contexto asincrónico.
+
+### Por qué ThreadPoolTaskExecutor (bounded) en lugar de SimpleAsyncTaskExecutor
+
+- **`SimpleAsyncTaskExecutor`**: crea un nuevo thread por cada tarea. Bajo carga alta, esto agota los recursos del JVM y del sistema operativo (OOM, thread exhaustion).
+- **`ThreadPoolTaskExecutor`**: usa un pool acotado con cola de espera. Recursos controlados, rechazo predecible.
+
+Configuración del pool:
+
+| Propiedad | Valor |
+|-----------|-------|
+| Core pool size | 2 |
+| Max pool size | 4 |
+| Queue capacity | 25 |
+| Thread name prefix | `notification-dispatch-` |
+
+Estos números son conservadores para el scope del challenge, pero demuestran la decisión consciente de usar recursos acotados en lugar de threads ilimitados.
+
+### Cambio de contrato en POST /notifications
+
+Antes: el endpoint bloqueaba el thread HTTP hasta que el envío simulado terminaba y devolvía `SENT` o `FAILED`.
+
+Ahora: el endpoint devuelve inmediatamente `PENDING`. El cliente debe hacer polling a `GET /notifications/{id}` para conocer el estado final (`SENT`, `FAILED`).
+
+### Estrategia de testing
+
+- **Unit tests**: se mockea `ApplicationEventPublisher` y se verifica que `createNotification()` publica el evento con los datos correctos. El listener se testea en isolation mockeando `ChannelDispatcher`.
+- **Integration tests**: se usa **Awaitility** para esperar condiciones asincrónicas (ej. "el estado de la notificación pasa de `PENDING` a `SENT` en menos de 5 segundos"). Esto evita `Thread.sleep()` rígidos y hace los tests deterministas.
+- **No se usa `@Async` en integration tests para el listener**: se confía en el `ThreadPoolTaskExecutor` real y se espera con Awaitility hasta que el thread de dispatch completa su trabajo.

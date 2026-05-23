@@ -8,14 +8,13 @@ import io.backend.notifications.dto.NotificationRequest;
 import io.backend.notifications.dto.NotificationUpdateRequest;
 import io.backend.notifications.entity.Notification;
 import io.backend.notifications.entity.User;
-import io.backend.notifications.enums.Channel;
-import io.backend.notifications.enums.Status;
+import io.backend.notifications.event.NotificationCreatedEvent;
 import io.backend.notifications.repository.NotificationRepository;
 import io.backend.notifications.repository.NotificationSpecifications;
 import io.backend.notifications.repository.UserRepository;
-import io.backend.notifications.service.channel.ChannelDispatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -36,16 +35,16 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
     private final ExternalMediaClient externalMediaClient;
-    private final ChannelDispatcher channelDispatcher;
+    private final ApplicationEventPublisher eventPublisher;
 
     public NotificationService(NotificationRepository notificationRepository,
                                UserRepository userRepository,
                                ExternalMediaClient externalMediaClient,
-                               ChannelDispatcher channelDispatcher) {
+                               ApplicationEventPublisher eventPublisher) {
         this.notificationRepository = notificationRepository;
         this.userRepository = userRepository;
         this.externalMediaClient = externalMediaClient;
-        this.channelDispatcher = channelDispatcher;
+        this.eventPublisher = eventPublisher;
     }
 
     public EnrichedNotificationResponse createNotification(NotificationRequest request) {
@@ -64,14 +63,7 @@ public class NotificationService {
         }
 
         Notification saved = notificationRepository.save(notification);
-        try {
-            channelDispatcher.dispatch(saved);
-            saved.setStatus(Status.SENT);
-        } catch (Exception e) {
-            log.error("Channel dispatch failed: {}", e.getMessage());
-            saved.setStatus(Status.FAILED);
-        }
-        notificationRepository.save(saved);
+        eventPublisher.publishEvent(new NotificationCreatedEvent(saved.getId()));
         return enrichNotification(saved);
     }
 
