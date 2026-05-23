@@ -28,6 +28,11 @@ jwt:
   secret: dGVzdHNlY3JldGtleWZvcnRlc3Rpbmd3aXRoZW5vdWdoYnl0ZXM=
   expiration-ms: 86400000
 
+notifications:
+  dispatch:
+    retry:
+      delay-ms: 0
+
 springdoc:
   api-docs:
     enabled: false

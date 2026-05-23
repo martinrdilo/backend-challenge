@@ -42,6 +42,13 @@ rate-limit:
   register-attempts-per-minute: 3
   window-minutes: 1
 
+notifications:
+  dispatch:
+    retry:
+      max-attempts: 3
+      delay-ms: 1000
+      multiplier: 2.0
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
