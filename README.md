@@ -130,7 +130,7 @@ POST /notifications
 ./gradlew test
 ```
 
-**Current coverage**: 160 tests (unit + integration), 0 failures.
+**Current coverage**: 216 tests (unit + integration), 0 failures.
 
 - **Unit**: `MockitoExtension`, no Spring context. Each sender and service tested in isolation.
 - **Integration**: `Testcontainers` (real PostgreSQL) + `WireMock` (external API) + `WebTestClient` (HTTP).
@@ -189,6 +189,25 @@ A Bucket4j token-bucket filter protects authentication endpoints from brute-forc
 
 `POST /notifications` returns immediately with `PENDING` status, decoupling the HTTP response from channel delivery. A Spring `ApplicationEventPublisher` fires a `NotificationCreatedEvent` after persistence, and an `@Async` listener (`NotificationDispatchListener`) handles the actual dispatch on a separate thread with its own transaction (`REQUIRES_NEW`). A bounded `ThreadPoolTaskExecutor` (core=2, max=4, queue=25) prevents resource exhaustion. Clients poll `GET /notifications/{id}` for the final `SENT` or `FAILED` status.
 
+### Observability & Monitoring
+
+Micrometer metrics, JSON structured logging, correlation IDs, and custom health indicators provide production-grade visibility into the async dispatch pipeline — which was previously a black box.
+
+**Metrics** (`/actuator/metrics`, authenticated):
+- `notification.dispatched` — counter tagged by `channel` and `outcome` (sent / failed)
+- `notification.retry.total` — counter incremented on each retry attempt
+- `notification.dispatch.duration` — timer capturing dispatch latency
+- `executor.queue.remaining`, `executor.active`, `executor.pool.size` — thread pool gauges
+
+**Structured Logging**: Logback configured with `logstash-logback-encoder`. Console text output in the `dev` profile; JSON output (console + rotating file at `logs/structured.log`) in all other profiles. Every log line carries MDC fields — `correlationId`, `userId`, `channel`, `notificationId` — when available.
+
+**Correlation ID**: A `CorrelationIdFilter` (first in the Security filter chain) extracts the `X-Correlation-Id` header from incoming requests or generates a UUID. The ID is stored in MDC and propagates across `@Async` boundaries via a `TaskDecorator` on the dispatch executor, so every log line related to a request — from the HTTP thread through the async worker — shares the same correlation ID.
+
+**Health Checks** (`/actuator/health`, public):
+- `dispatch` — monitors thread pool saturation (DOWN when queue ≥90% or all core threads busy)
+- `externalApi` — pings the photo enrichment API
+- `database` — Spring Boot's built-in `DataSourceHealthIndicator`
+
 > Full reasoning behind each decision → [`docs/05-technical-decisions.md`](docs/05-technical-decisions.md)
 
 ## Documentation
@@ -200,13 +219,13 @@ Detailed docs in [`docs/`](docs/):
 - [`03-testing-infrastructure.md`](docs/03-testing-infrastructure.md) — Testcontainers, WireMock, and test architecture
 - [`04-testing-architecture-diagram.md`](docs/04-testing-architecture-diagram.md) — Visual overview of the test setup
 - [`05-technical-decisions.md`](docs/05-technical-decisions.md) — Detailed reasoning behind all architectural decisions
+- [`06-observability.md`](docs/06-observability.md) — Structured logging, metrics, correlation IDs, and health checks
 
 ## Areas to Improve
 
 Tradeoffs and improvements I'd make with more time:
 
 - **Database performance**: add indexes on `notifications(user_id, status, channel, created_at)` for combined criteria queries
-- **Observability**: add structured logging (JSON) and retry metrics for the async dispatch listener
 - **Concurrent load testing**: verify thread pool behavior under 10+ simultaneous POST requests
 
 ## Versioning
