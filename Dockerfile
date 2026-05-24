@@ -3,7 +3,7 @@ WORKDIR /app
 COPY gradlew gradlew.bat ./
 RUN chmod +x gradlew
 COPY gradle gradle
-COPY build.gradle settings.gradle ./
+COPY build.gradle settings.gradle gradle.properties ./
 RUN ./gradlew dependencies --no-daemon
 COPY src src
 
