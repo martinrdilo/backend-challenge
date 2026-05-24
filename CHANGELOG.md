@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-23
+
+### Added
+- Swagger UI now displays the application version from `gradle.properties` via Spring Boot `buildInfo()`
+
+### Fixed
+- Unit tests (`RateLimitConfigTest`, `GlobalExceptionHandlerTest`) no longer require a database, fixing CI failures
+- `run-tests-ci.sh` — simulates CI environment to catch placeholder resolution issues before pushing
+
 ## [0.2.1] - 2026-05-23
 
 ### Fixed
