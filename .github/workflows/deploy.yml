@@ -15,6 +15,6 @@ jobs:
         run: npm install -g @railway/cli
 
       - name: Deploy to Railway
-        run: railway up
+        run: railway up --service feisty-gratitude
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
