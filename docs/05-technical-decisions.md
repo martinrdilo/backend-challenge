@@ -267,3 +267,62 @@ Ahora: el endpoint devuelve inmediatamente `PENDING`. El cliente debe hacer poll
 - **Unit tests**: se mockea `ApplicationEventPublisher` y se verifica que `createNotification()` publica el evento con los datos correctos. El listener se testea en isolation mockeando `ChannelDispatcher`.
 - **Integration tests**: se usa **Awaitility** para esperar condiciones asincrónicas (ej. "el estado de la notificación pasa de `PENDING` a `SENT` en menos de 5 segundos"). Esto evita `Thread.sleep()` rígidos y hace los tests deterministas.
 - **No se usa `@Async` en integration tests para el listener**: se confía en el `ThreadPoolTaskExecutor` real y se espera con Awaitility hasta que el thread de dispatch completa su trabajo.
+
+---
+
+## 9. Observability & Monitoring
+
+### Por qué Micrometer y no OpenTelemetry
+
+Micrometer es la fachada de métricas por defecto en Spring Boot 3 — está auto-configurada, no requiere dependencias extra, y funciona como capa de abstracción sobre múltiples backends (Prometheus, Datadog, CloudWatch, etc.). El starter-actuator ya incluye `micrometer-core`. OpenTelemetry sería correcto para distributed tracing multi-servicio, pero para un solo servicio el overhead de configuración no se justifica.
+
+### Por qué logstash-logback-encoder y no otro encoder JSON
+
+`logstash-logback-encoder` (8.1) es el encoder JSON más usado en el ecosistema Spring Boot. Provee `LoggingEventCompositeJsonEncoder` que arma el objeto JSON por composición de providers (timestamp, level, MDC, stacktrace, etc.) en vez de serializar el `ILoggingEvent` completo. Esto da control fino sobre qué campos aparecen y cómo se formatean.
+
+### Por qué CorrelationIdFilter va PRIMERO en la cadena de filtros
+
+El orden importa porque cada filtro downstream (rate limiting, JWT, controllers) se beneficia de tener el correlation ID en MDC para sus logs:
+
+```
+CorrelationIdFilter → RateLimitFilter → JwtAuthFilter → UAPF
+```
+
+Si `CorrelationIdFilter` fuera después de `RateLimitFilter`, los logs de rate limiting no tendrían correlation ID — y justamente esos logs son críticos en producción para correlacionar bloqueos con requests específicos.
+
+La implementación usa `addFilterBefore(correlationIdFilter, UsernamePasswordAuthenticationFilter.class)` porque los filtros custom (`RateLimitFilter`, `JwtAuthFilter`) no están registrados en el `FilterComparator` de Spring Security — el orden real lo determina el orden de inserción en `HttpSecurity`. Como `CorrelationIdFilter` se agrega primero, queda primero.
+
+### Por qué TaskDecorator y no MDC manual en el listener
+
+Dos opciones para propagar MDC a threads asincrónicos:
+
+1. **Copiar MDC manualmente** en `onNotificationCreated()` con `try { MDC.setContextMap(...); dispatch(); } finally { MDC.clear(); }`
+2. **`TaskDecorator`** en el executor bean — un interceptor que envuelve cada `Runnable` antes de enviarlo al pool
+
+Se eligió `TaskDecorator` porque:
+
+- **Separation of concerns**: el listener no debería saber de MDC — su responsabilidad es dispatchear notificaciones, no manejar contexto de tracing
+- **Zero-touch para nuevos listeners**: si en el futuro se agrega otro `@Async` listener (ej. para webhooks), hereda la propagación sin escribir una línea
+- **Fail-safe**: el `finally { MDC.clear() }` en el decorator garantiza que un MDC "sucio" no contamine threads del pool entre tareas
+
+### Por qué métricas van en el listener y no en el ChannelDispatcher
+
+`NotificationDispatchListener` es el punto de entrada al pipeline asincrónico — es donde se inicia el timer y donde se conoce el resultado final (`SENT` o `FAILED`). Si las métricas estuvieran en `ChannelDispatcher.dispatch()`, el timer no capturaría el overhead del evento, la transacción `REQUIRES_NEW`, ni la resolución del `ChannelSender` — solo el envío simulado. Además, el listener ya conoce el `channel` y el `notificationId`, que son los tags necesarios para las métricas.
+
+### Por qué `/actuator/health` es público pero `/actuator/metrics` no
+
+- **Health público**: convención de Kubernetes — los readiness/liveness probes no llevan auth headers. Si el endpoint de health requiere autenticación, el cluster no puede determinar si el pod está vivo.
+- **Metrics autenticado**: los datos de métricas (throughput, latencia, saturation) son información operacional que no debería estar expuesta. Se protegen con el mismo `SecurityFilterChain` que el resto de la API, requiriendo JWT válido.
+
+### Health check del pool de dispatch
+
+`DispatchHealthIndicator` reporta DOWN cuando:
+
+1. La cola de trabajo está al ≥90% de su capacidad (`queueSize / maxQueueSize ≥ 0.9`)
+2. O todos los core threads están activos y la cola también está saturada
+
+Esto es intencionalmente **conservador**: una saturación total (100%) es demasiado tarde para alertar. Marcar DOWN al 90% da margen para reaccionar antes de que se rechacen tareas (`TaskRejectedException`).
+
+### Métricas lazy vs eager registration
+
+Micrometer registra contadores la primera vez que se usan — no al inicio. Esto significa que `/actuator/metrics/notification.dispatched` devuelve 404 hasta que ocurre al menos un dispatch. Es comportamiento esperado de Micrometer (optimiza memoria evitando registrar métricas que nunca se usan) y está documentado en los tests de integración.

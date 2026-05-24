@@ -1,6 +1,7 @@
 server:
   port: ${PORT:8081}
   forward-headers-strategy: framework
+  shutdown: graceful
   tomcat:
     remoteip:
       internal-proxies: .*
@@ -8,6 +9,8 @@ server:
 spring:
   application:
     name: backend-notifications
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   mvc:
     problemdetails:
       enabled: true
@@ -54,3 +57,16 @@ springdoc:
     path: /swagger-ui.html
   api-docs:
     path: /v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    io.backend: DEBUG
