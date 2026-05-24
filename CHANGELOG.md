@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `POST /notifications/{id}/retry` — retry a FAILED notification (resets to PENDING, re-enters async dispatch pipeline)
+- PENDING retries are idempotent (200 OK), SENT returns 409 Conflict
+- 13 new tests (5 unit + 8 integration), 173 total
+
+### Documentation
+- Updated state diagram and error matrix in `docs/02-channel-sending-and-crud.md`
+- Added retry endpoint to README API table
+
+## [0.3.2] - 2026-05-24
+
+### Fixed
+- `gradle.properties` not included in Docker build, causing Swagger to show `0.0.1-SNAPSHOT` instead of the actual version
+
+## [0.3.1] - 2026-05-24
+
+### Added
+- Spotless plugin with Google Java Format — automatic code formatting for all 69 Java source files
+- GitHub Actions deploy workflow — Railway deployment triggered by `v*` release tags
+
+### Fixed
+- Railway deploy workflow: added `--service feisty-gratitude` flag to resolve multi-service ambiguity
+
 ## [0.3.0] - 2026-05-23
 
 ### Added
