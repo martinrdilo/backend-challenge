@@ -1,7 +1,7 @@
 package io.backend.notifications.enums;
 
 public enum Channel {
-    EMAIL,
-    SMS,
-    PUSH
+  EMAIL,
+  SMS,
+  PUSH
 }

@@ -10,28 +10,21 @@ import org.springframework.web.client.RestClient;
 @Component
 public class ExternalMediaClient {
 
-    private static final Logger log = LoggerFactory.getLogger(ExternalMediaClient.class);
+  private static final Logger log = LoggerFactory.getLogger(ExternalMediaClient.class);
 
-    private final RestClient restClient;
+  private final RestClient restClient;
 
-    public ExternalMediaClient(
-            RestClient.Builder builder,
-            @Value("${external.api.photos.base-url}") String baseUrl
-    ) {
-        this.restClient = builder
-                .baseUrl(baseUrl)
-                .build();
+  public ExternalMediaClient(
+      RestClient.Builder builder, @Value("${external.api.photos.base-url}") String baseUrl) {
+    this.restClient = builder.baseUrl(baseUrl).build();
+  }
+
+  public ExternalPhotoResponse getPhotoById(Long id) {
+    try {
+      return restClient.get().uri("/photos/{id}", id).retrieve().body(ExternalPhotoResponse.class);
+    } catch (RuntimeException e) {
+      log.error("Failed to fetch photo with id {}: {}", id, e.getMessage());
+      return null;
     }
-
-    public ExternalPhotoResponse getPhotoById(Long id) {
-        try {
-            return restClient.get()
-                    .uri("/photos/{id}", id)
-                    .retrieve()
-                    .body(ExternalPhotoResponse.class);
-        } catch (RuntimeException e) {
-            log.error("Failed to fetch photo with id {}: {}", id, e.getMessage());
-            return null;
-        }
-    }
+  }
 }

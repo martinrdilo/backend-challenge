@@ -3,6 +3,7 @@ plugins {
     id 'org.springframework.boot' version '3.5.0'
     id 'io.spring.dependency-management' version '1.1.7'
     id 'jacoco'
+    id 'com.diffplug.spotless' version '7.0.2'
 }
 
 group = 'io.backend.challenge'
@@ -66,6 +67,12 @@ jacocoTestReport {
     reports {
         xml.required = true
         html.required = true
+    }
+}
+
+spotless {
+    java {
+        googleJavaFormat()
     }
 }
 

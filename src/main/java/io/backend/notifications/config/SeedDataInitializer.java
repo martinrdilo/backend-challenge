@@ -14,92 +14,104 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
- * Seeds sample users and notifications on startup for development.
- * Runs only when the {@code test} profile is NOT active.
+ * Seeds sample users and notifications on startup for development. Runs only when the {@code test}
+ * profile is NOT active.
  *
- * <p><strong>Idempotent:</strong> Users are checked via {@code existsByEmail}
- * before insertion. Re-running the application won't create duplicates.</p>
+ * <p><strong>Idempotent:</strong> Users are checked via {@code existsByEmail} before insertion.
+ * Re-running the application won't create duplicates.
  */
 @Component
 @Profile("!test")
 public class SeedDataInitializer implements CommandLineRunner {
 
-    private static final Logger log = LoggerFactory.getLogger(SeedDataInitializer.class);
+  private static final Logger log = LoggerFactory.getLogger(SeedDataInitializer.class);
 
-    private final UserRepository userRepository;
-    private final NotificationRepository notificationRepository;
-    private final PasswordEncoder passwordEncoder;
+  private final UserRepository userRepository;
+  private final NotificationRepository notificationRepository;
+  private final PasswordEncoder passwordEncoder;
 
-    public SeedDataInitializer(UserRepository userRepository,
-                               NotificationRepository notificationRepository,
-                               PasswordEncoder passwordEncoder) {
-        this.userRepository = userRepository;
-        this.notificationRepository = notificationRepository;
-        this.passwordEncoder = passwordEncoder;
+  public SeedDataInitializer(
+      UserRepository userRepository,
+      NotificationRepository notificationRepository,
+      PasswordEncoder passwordEncoder) {
+    this.userRepository = userRepository;
+    this.notificationRepository = notificationRepository;
+    this.passwordEncoder = passwordEncoder;
+  }
+
+  @Override
+  public void run(String... args) {
+    log.info("Seeding sample data...");
+
+    User alice = createUserIfNotExists("alice@example.com", "alice", "+541112345678", null);
+
+    User bob = createUserIfNotExists("bob@example.com", "bob", "+541198765432", null);
+
+    if (notificationRepository.count() > 0) {
+      log.info("Notifications already exist, skipping notification seed.");
+      log.info("Seed data complete.");
+      return;
     }
 
-    @Override
-    public void run(String... args) {
-        log.info("Seeding sample data...");
+    createNotification(
+        alice, "Welcome alert", "Welcome to the notification system", Channel.EMAIL, Status.SENT);
 
-        User alice = createUserIfNotExists(
-                "alice@example.com", "alice", "+541112345678", null);
+    createNotification(
+        alice, "SMS promotion", "Check out our latest SMS offers!", Channel.SMS, Status.SENT);
 
-        User bob = createUserIfNotExists(
-                "bob@example.com", "bob", "+541198765432", null);
+    createNotification(
+        alice,
+        "Push reminder",
+        "Don't forget your appointment tomorrow",
+        Channel.PUSH,
+        Status.PENDING);
 
-        if (notificationRepository.count() > 0) {
-            log.info("Notifications already exist, skipping notification seed.");
-            log.info("Seed data complete.");
-            return;
-        }
+    createNotification(
+        bob,
+        "Failed delivery",
+        "Email could not be delivered to recipient",
+        Channel.EMAIL,
+        Status.FAILED);
 
-        createNotification(alice, "Welcome alert", "Welcome to the notification system",
-                Channel.EMAIL, Status.SENT);
+    createNotification(
+        alice,
+        "System alert",
+        "System maintenance scheduled for tonight",
+        Channel.SMS,
+        Status.SENT);
 
-        createNotification(alice, "SMS promotion", "Check out our latest SMS offers!",
-                Channel.SMS, Status.SENT);
+    log.info("Seed data complete.");
+  }
 
-        createNotification(alice, "Push reminder", "Don't forget your appointment tomorrow",
-                Channel.PUSH, Status.PENDING);
-
-        createNotification(bob, "Failed delivery", "Email could not be delivered to recipient",
-                Channel.EMAIL, Status.FAILED);
-
-        createNotification(alice, "System alert", "System maintenance scheduled for tonight",
-                Channel.SMS, Status.SENT);
-
-        log.info("Seed data complete.");
+  private User createUserIfNotExists(
+      String email, String username, String phone, String deviceToken) {
+    if (userRepository.existsByEmail(email)) {
+      log.debug("User {} already exists, skipping.", email);
+      return userRepository.findByEmail(email).orElseThrow();
     }
 
-    private User createUserIfNotExists(String email, String username, String phone, String deviceToken) {
-        if (userRepository.existsByEmail(email)) {
-            log.debug("User {} already exists, skipping.", email);
-            return userRepository.findByEmail(email).orElseThrow();
-        }
+    User user = new User();
+    user.setEmail(email);
+    user.setUsername(username);
+    user.setPasswordHash(passwordEncoder.encode("password123"));
+    user.setPhone(phone);
+    user.setDeviceToken(deviceToken);
 
-        User user = new User();
-        user.setEmail(email);
-        user.setUsername(username);
-        user.setPasswordHash(passwordEncoder.encode("password123"));
-        user.setPhone(phone);
-        user.setDeviceToken(deviceToken);
+    User saved = userRepository.save(user);
+    log.info("Created user: {}", email);
+    return saved;
+  }
 
-        User saved = userRepository.save(user);
-        log.info("Created user: {}", email);
-        return saved;
-    }
+  private void createNotification(
+      User user, String title, String content, Channel channel, Status status) {
+    Notification notification = new Notification();
+    notification.setUser(user);
+    notification.setTitle(title);
+    notification.setContent(content);
+    notification.setChannel(channel);
+    notification.setStatus(status);
 
-    private void createNotification(User user, String title, String content,
-                                     Channel channel, Status status) {
-        Notification notification = new Notification();
-        notification.setUser(user);
-        notification.setTitle(title);
-        notification.setContent(content);
-        notification.setChannel(channel);
-        notification.setStatus(status);
-
-        notificationRepository.save(notification);
-        log.debug("Created notification: {}", title);
-    }
+    notificationRepository.save(notification);
+    log.debug("Created notification: {}", title);
+  }
 }

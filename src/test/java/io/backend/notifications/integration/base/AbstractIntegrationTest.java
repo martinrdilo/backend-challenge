@@ -22,111 +22,104 @@ import org.testcontainers.containers.PostgreSQLContainer;
 /**
  * Base class for all integration tests.
  *
- * Provides:
- * - Singleton PostgreSQL container (Testcontainers) — shared across all test classes
- * - WireMock server on dynamic port — for mocking external API calls
- * - Dynamic property overrides for datasource and external API base-url
- * - WebTestClient for HTTP request testing
+ * <p>Provides: - Singleton PostgreSQL container (Testcontainers) — shared across all test classes -
+ * WireMock server on dynamic port — for mocking external API calls - Dynamic property overrides for
+ * datasource and external API base-url - WebTestClient for HTTP request testing
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 public abstract class AbstractIntegrationTest {
 
-    // Singleton Testcontainers PostgreSQL — started once, reused by all tests
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16-alpine")
-                    .withDatabaseName("notification_test_db")
-                    .withUsername("test")
-                    .withPassword("test");
+  // Singleton Testcontainers PostgreSQL — started once, reused by all tests
+  static final PostgreSQLContainer<?> POSTGRES =
+      new PostgreSQLContainer<>("postgres:16-alpine")
+          .withDatabaseName("notification_test_db")
+          .withUsername("test")
+          .withPassword("test");
 
-    // Singleton WireMock server — started once, reused by all tests
-    protected static final WireMockServer WIREMOCK =
-            new WireMockServer(WireMockConfiguration.wireMockConfig().dynamicPort());
+  // Singleton WireMock server — started once, reused by all tests
+  protected static final WireMockServer WIREMOCK =
+      new WireMockServer(WireMockConfiguration.wireMockConfig().dynamicPort());
 
-    static {
-        POSTGRES.start();
-        WIREMOCK.start();
-    }
+  static {
+    POSTGRES.start();
+    WIREMOCK.start();
+  }
 
-    @DynamicPropertySource
-    static void overrideProperties(DynamicPropertyRegistry registry) {
-        // Database — point to Testcontainers PostgreSQL
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+  @DynamicPropertySource
+  static void overrideProperties(DynamicPropertyRegistry registry) {
+    // Database — point to Testcontainers PostgreSQL
+    registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+    registry.add("spring.datasource.username", POSTGRES::getUsername);
+    registry.add("spring.datasource.password", POSTGRES::getPassword);
 
-        // External API — point to WireMock (tests match on path only)
-        registry.add("external.api.jsonplaceholder.base-url",
-                () -> "http://localhost:" + WIREMOCK.port());
-        registry.add("external.api.photos.base-url",
-                () -> "http://localhost:" + WIREMOCK.port());
-    }
+    // External API — point to WireMock (tests match on path only)
+    registry.add(
+        "external.api.jsonplaceholder.base-url", () -> "http://localhost:" + WIREMOCK.port());
+    registry.add("external.api.photos.base-url", () -> "http://localhost:" + WIREMOCK.port());
+  }
 
-    /**
-     * Runs before EACH test method in every subclass.
-     * Resets WireMock stubs so no test inherits stubs from a previous one.
-     * Subclasses that need to clean DB data should call their repository.deleteAll()
-     * in their own @BeforeEach (which runs AFTER this one).
-     */
-    @BeforeEach
-    void resetMocks() {
-        WireMockHelper.reset(WIREMOCK);
-        cleanDatabase();
-    }
+  /**
+   * Runs before EACH test method in every subclass. Resets WireMock stubs so no test inherits stubs
+   * from a previous one. Subclasses that need to clean DB data should call their
+   * repository.deleteAll() in their own @BeforeEach (which runs AFTER this one).
+   */
+  @BeforeEach
+  void resetMocks() {
+    WireMockHelper.reset(WIREMOCK);
+    cleanDatabase();
+  }
 
-    @Autowired
-    private NotificationRepository notificationRepository;
+  @Autowired private NotificationRepository notificationRepository;
 
-    @Autowired
-    private UserRepository userRepository;
+  @Autowired private UserRepository userRepository;
 
-    /**
-     * Deletes all data in FK-safe order: notifications first, then users.
-     * Called from resetMocks() so every test starts with a clean database.
-     */
-    protected void cleanDatabase() {
-        notificationRepository.deleteAll();
-        userRepository.deleteAll();
-    }
+  /**
+   * Deletes all data in FK-safe order: notifications first, then users. Called from resetMocks() so
+   * every test starts with a clean database.
+   */
+  protected void cleanDatabase() {
+    notificationRepository.deleteAll();
+    userRepository.deleteAll();
+  }
 
-    @LocalServerPort
-    private int port;
+  @LocalServerPort private int port;
 
-    protected WebTestClient webTestClient() {
-        return WebTestClient.bindToServer()
-                .baseUrl("http://localhost:" + port)
-                .build();
-    }
+  protected WebTestClient webTestClient() {
+    return WebTestClient.bindToServer().baseUrl("http://localhost:" + port).build();
+  }
 
-    /**
-     * Logs in and returns the Bearer token string.
-     * Assumes the user already exists in the database.
-     */
-    protected String obtainToken(String email, String password) {
-        AuthResponse response = webTestClient()
-                .post().uri("/auth/login")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(new LoginRequest(email, password))
-                .exchange()
-                .expectStatus().isOk()
-                .returnResult(AuthResponse.class)
-                .getResponseBody()
-                .blockFirst();
-
-        return response != null ? response.token() : null;
-    }
-
-    /**
-     * Registers a user via POST /auth/register and returns the Bearer token.
-     */
-    protected String registerAndLogin(UserBuilder builder) {
+  /**
+   * Logs in and returns the Bearer token string. Assumes the user already exists in the database.
+   */
+  protected String obtainToken(String email, String password) {
+    AuthResponse response =
         webTestClient()
-                .post().uri("/auth/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(builder.buildRegisterRequest())
-                .exchange()
-                .expectStatus().isCreated();
+            .post()
+            .uri("/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(new LoginRequest(email, password))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .returnResult(AuthResponse.class)
+            .getResponseBody()
+            .blockFirst();
 
-        return obtainToken(builder.getEmail(), builder.getPassword());
-    }
+    return response != null ? response.token() : null;
+  }
+
+  /** Registers a user via POST /auth/register and returns the Bearer token. */
+  protected String registerAndLogin(UserBuilder builder) {
+    webTestClient()
+        .post()
+        .uri("/auth/register")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(builder.buildRegisterRequest())
+        .exchange()
+        .expectStatus()
+        .isCreated();
+
+    return obtainToken(builder.getEmail(), builder.getPassword());
+  }
 }

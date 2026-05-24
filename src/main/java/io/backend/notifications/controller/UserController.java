@@ -1,11 +1,10 @@
 package io.backend.notifications.controller;
 
-import java.util.List;
-
 import io.backend.notifications.dto.UserRequest;
 import io.backend.notifications.dto.UserResponse;
 import io.backend.notifications.service.UserService;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,31 +12,31 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/users")
 public class UserController {
 
-    private final UserService userService;
+  private final UserService userService;
 
-    public UserController(UserService userService) {
-        this.userService = userService;
-    }
+  public UserController(UserService userService) {
+    this.userService = userService;
+  }
 
-    @GetMapping
-    public ResponseEntity<List<UserResponse>> findAll() {
-        return ResponseEntity.ok(userService.findAll());
-    }
+  @GetMapping
+  public ResponseEntity<List<UserResponse>> findAll() {
+    return ResponseEntity.ok(userService.findAll());
+  }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<UserResponse> findById(@PathVariable long id) {
-        return ResponseEntity.ok(userService.findById(id));
-    }
+  @GetMapping("/{id}")
+  public ResponseEntity<UserResponse> findById(@PathVariable long id) {
+    return ResponseEntity.ok(userService.findById(id));
+  }
 
-    @PutMapping("/{id}")
-    public ResponseEntity<UserResponse> update(@PathVariable long id,
-                                               @Valid @RequestBody UserRequest userRequest) {
-        return ResponseEntity.ok(userService.update(id, userRequest));
-    }
+  @PutMapping("/{id}")
+  public ResponseEntity<UserResponse> update(
+      @PathVariable long id, @Valid @RequestBody UserRequest userRequest) {
+    return ResponseEntity.ok(userService.update(id, userRequest));
+  }
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<UserResponse> delete(@PathVariable long id) {
-        userService.delete(id);
-        return ResponseEntity.noContent().build();
-    }
+  @DeleteMapping("/{id}")
+  public ResponseEntity<UserResponse> delete(@PathVariable long id) {
+    userService.delete(id);
+    return ResponseEntity.noContent().build();
+  }
 }

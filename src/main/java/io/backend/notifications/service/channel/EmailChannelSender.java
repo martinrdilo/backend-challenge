@@ -7,25 +7,24 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Sends notifications via email.
- * Validates that the associated user has a non-null email address.
+ * Sends notifications via email. Validates that the associated user has a non-null email address.
  */
 @Component
 public class EmailChannelSender implements ChannelSender {
 
-    private static final Logger log = LoggerFactory.getLogger(EmailChannelSender.class);
+  private static final Logger log = LoggerFactory.getLogger(EmailChannelSender.class);
 
-    @Override
-    public void send(Notification notification) {
-        String email = notification.getUser().getEmail();
-        if (email == null) {
-            throw new IllegalStateException("User email is null");
-        }
-        log.info("Email sent to {}", email);
+  @Override
+  public void send(Notification notification) {
+    String email = notification.getUser().getEmail();
+    if (email == null) {
+      throw new IllegalStateException("User email is null");
     }
+    log.info("Email sent to {}", email);
+  }
 
-    @Override
-    public Channel getChannel() {
-        return Channel.EMAIL;
-    }
+  @Override
+  public Channel getChannel() {
+    return Channel.EMAIL;
+  }
 }
