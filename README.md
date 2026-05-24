@@ -128,6 +128,9 @@ POST /notifications
 
 # Or manually:
 ./gradlew test
+
+# Simulate CI environment — catches missing env vars, placeholder resolution
+./run-tests-ci.sh
 ```
 
 **Current coverage**: 160 tests (unit + integration), 0 failures.
@@ -223,7 +226,12 @@ appVersion=0.1.0
 
 **When releasing** (on `main`):
 
-1. **Bump the version** in `gradle.properties` according to SemVer:
+1. **Run CI simulation** to catch missing env vars or profile issues:
+   ```bash
+   ./run-tests-ci.sh
+   ```
+
+2. **Bump the version** in `gradle.properties` according to SemVer:
    - Bug fix → patch bump (`0.1.0` → `0.1.1`)
    - New feature, backward-compatible → minor bump (`0.1.0` → `0.2.0`)
    - Breaking change → major bump (`0.1.0` → `1.0.0`)
