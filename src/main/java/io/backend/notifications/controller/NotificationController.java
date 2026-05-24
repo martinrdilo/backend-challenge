@@ -16,6 +16,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -66,5 +67,11 @@ public class NotificationController {
   public ResponseEntity<Void> deleteNotification(@PathVariable Long id) {
     notificationService.deleteNotification(id);
     return ResponseEntity.noContent().build();
+  }
+
+  @PostMapping("/{id}/retry")
+  @PreAuthorize("isAuthenticated()")
+  public ResponseEntity<EnrichedNotificationResponse> retryNotification(@PathVariable Long id) {
+    return ResponseEntity.ok(notificationService.retryNotification(id));
   }
 }

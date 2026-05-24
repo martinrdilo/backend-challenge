@@ -2,6 +2,7 @@ package io.backend.notifications.service;
 
 import io.backend.notifications.client.ExternalMediaClient;
 import io.backend.notifications.dto.EnrichedNotificationResponse;
+import io.backend.notifications.enums.Status;
 import io.backend.notifications.dto.ExternalPhotoResponse;
 import io.backend.notifications.dto.NotificationCriteria;
 import io.backend.notifications.dto.NotificationRequest;
@@ -145,6 +146,25 @@ public class NotificationService {
   public void deleteNotification(Long id) {
     Notification notification = findOwnNotification(id);
     notificationRepository.delete(notification);
+  }
+
+  public EnrichedNotificationResponse retryNotification(Long id) {
+    Notification notification = findOwnNotification(id);
+
+    if (notification.getStatus() == Status.SENT) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "SENT notifications cannot be retried");
+    }
+
+    if (notification.getStatus() == Status.FAILED) {
+      notification.setStatus(Status.PENDING);
+      Notification saved = notificationRepository.save(notification);
+      eventPublisher.publishEvent(new NotificationCreatedEvent(saved.getId()));
+      return enrichNotification(saved);
+    }
+
+    // PENDING (or any future non-SENT, non-FAILED status) — idempotent, return as-is
+    return enrichNotification(notification);
   }
 
   private EnrichedNotificationResponse enrichNotification(Notification notification) {

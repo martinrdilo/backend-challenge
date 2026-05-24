@@ -63,6 +63,7 @@ The API will be available at `http://localhost:8080`. Swagger UI at `http://loca
 | POST | `/notifications` | Create notification (returns `PENDING`, dispatches asynchronously) | Bearer |
 | PUT | `/notifications/{id}` | Update notification (title, content, attachmentIds) | Bearer |
 | DELETE | `/notifications/{id}` | Delete notification (own only) | Bearer |
+| POST | `/notifications/{id}/retry` | Retry a FAILED notification — resets to PENDING and re-dispatches | Bearer |
 
 ### Create Notification — Request
 
@@ -133,7 +134,7 @@ POST /notifications
 ./run-tests-ci.sh
 ```
 
-**Current coverage**: 160 tests (unit + integration), 0 failures.
+**Current coverage**: 173 tests (unit + integration), 0 failures.
 
 - **Unit**: `MockitoExtension`, no Spring context. Each sender and service tested in isolation.
 - **Integration**: `Testcontainers` (real PostgreSQL) + `WireMock` (external API) + `WebTestClient` (HTTP).

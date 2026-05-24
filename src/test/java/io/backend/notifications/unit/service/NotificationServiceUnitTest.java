@@ -12,6 +12,7 @@ import io.backend.notifications.entity.Notification;
 import io.backend.notifications.entity.User;
 import io.backend.notifications.enums.Channel;
 import io.backend.notifications.enums.Status;
+import io.backend.notifications.event.NotificationCreatedEvent;
 import io.backend.notifications.fixture.entity.NotificationBuilder;
 import io.backend.notifications.fixture.entity.UserBuilder;
 import io.backend.notifications.repository.NotificationRepository;
@@ -381,5 +382,101 @@ class NotificationServiceUnitTest {
 
     assertThat(result.getContent()).isEmpty();
     assertThat(result.getTotalElements()).isEqualTo(0);
+  }
+
+  // ──── retryNotification ────
+
+  @Test
+  void retryNotificationShouldResetFailedToPendingAndPublishEvent() {
+    User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
+    owner.setId(1L);
+    Notification notification =
+        NotificationBuilder.aNotification()
+            .withUser(owner)
+            .withStatus(Status.FAILED)
+            .build();
+    notification.setId(10L);
+
+    when(notificationRepository.findById(10L)).thenReturn(Optional.of(notification));
+    when(notificationRepository.save(any(Notification.class))).thenReturn(notification);
+
+    ArgumentCaptor<NotificationCreatedEvent> eventCaptor =
+        ArgumentCaptor.forClass(NotificationCreatedEvent.class);
+
+    var result = notificationService.retryNotification(10L);
+
+    assertThat(notification.getStatus()).isEqualTo(Status.PENDING);
+    assertThat(result.status()).isEqualTo("PENDING");
+    verify(notificationRepository).save(notification);
+    verify(eventPublisher).publishEvent(eventCaptor.capture());
+    assertThat(eventCaptor.getValue().notificationId()).isEqualTo(10L);
+  }
+
+  @Test
+  void retryNotificationShouldThrow404WhenNotFound() {
+    when(notificationRepository.findById(999L)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> notificationService.retryNotification(999L))
+        .isInstanceOf(ResponseStatusException.class)
+        .extracting("statusCode")
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void retryNotificationShouldThrow403WhenCrossUser() {
+    User otherUser = UserBuilder.aUser().withEmail("other@test.com").build();
+    otherUser.setId(2L);
+    Notification notification =
+        NotificationBuilder.aNotification()
+            .withUser(otherUser)
+            .withStatus(Status.FAILED)
+            .build();
+    notification.setId(10L);
+
+    when(notificationRepository.findById(10L)).thenReturn(Optional.of(notification));
+
+    assertThatThrownBy(() -> notificationService.retryNotification(10L))
+        .isInstanceOf(ResponseStatusException.class)
+        .extracting("statusCode")
+        .isEqualTo(HttpStatus.FORBIDDEN);
+  }
+
+  @Test
+  void retryNotificationShouldReturn200IdempotentlyWhenStatusIsPending() {
+    User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
+    owner.setId(1L);
+    Notification notification =
+        NotificationBuilder.aNotification()
+            .withUser(owner)
+            .withStatus(Status.PENDING)
+            .build();
+    notification.setId(10L);
+
+    when(notificationRepository.findById(10L)).thenReturn(Optional.of(notification));
+
+    var result = notificationService.retryNotification(10L);
+
+    assertThat(result.status()).isEqualTo("PENDING");
+    verify(notificationRepository, never()).save(any());
+    verify(eventPublisher, never()).publishEvent(any());
+  }
+
+  @Test
+  void retryNotificationShouldThrow409WhenStatusIsSent() {
+    User owner = UserBuilder.aUser().withEmail(USER_EMAIL).build();
+    owner.setId(1L);
+    Notification notification =
+        NotificationBuilder.aNotification()
+            .withUser(owner)
+            .withStatus(Status.SENT)
+            .build();
+    notification.setId(10L);
+
+    when(notificationRepository.findById(10L)).thenReturn(Optional.of(notification));
+
+    assertThatThrownBy(() -> notificationService.retryNotification(10L))
+        .isInstanceOf(ResponseStatusException.class)
+        .extracting("statusCode")
+        .isEqualTo(HttpStatus.CONFLICT);
   }
 }

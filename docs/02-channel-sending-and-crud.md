@@ -343,6 +343,7 @@ stateDiagram-v2
     [*] --> PENDING : POST /notifications
     PENDING --> SENT : Channel dispatch succeeds
     PENDING --> FAILED : Channel dispatch throws exception
+    FAILED --> PENDING : POST /notifications/{id}/retry
     SENT --> [*] : DELETE /notifications/{id}
     FAILED --> [*] : DELETE /notifications/{id}
     SENT --> SENT : PUT /notifications/{id} (update fields)
@@ -353,8 +354,9 @@ Status transitions:
 - **PENDING**: set by `@PrePersist` on creation, before dispatch
 - **SENT**: set synchronously after successful channel dispatch
 - **FAILED**: set when channel dispatch throws any exception
+- **FAILED → PENDING**: via `POST /notifications/{id}/retry` — resets status and publishes `NotificationCreatedEvent` for re-dispatch through the async pipeline with fresh retry attempts
 
-Note: PUT updates fields (title, content, attachmentIds) but does NOT change status and does NOT re-dispatch. A failed notification can be updated and re-created as a new POST if needed.
+Note: PUT updates fields (title, content, attachmentIds) but does NOT change status and does NOT re-dispatch. A failed notification can be retried via the dedicated retry endpoint.
 
 ---
 
@@ -410,6 +412,11 @@ sequenceDiagram
 | Blank title on update | PUT /notifications/{id} | 400 | `{"status":400,"error":"Validation failed","errors":{"title":"..."}}` |
 | Channel dispatch fails | POST /notifications | 201 (created) | Notification with status FAILED |
 | Delete own notification | DELETE /notifications/{id} | 204 | Empty body |
+| Retry failed notification | POST /notifications/{id}/retry | 200 | Notification with status PENDING (re-enters async dispatch) |
+| Retry non-existent notification | POST /notifications/{id}/retry | 404 | `{"status":404,"error":"Notification not found"}` |
+| Retry another user's notification | POST /notifications/{id}/retry | 403 | `{"status":403,"error":"Access denied"}` |
+| Retry already-sent notification | POST /notifications/{id}/retry | 409 | `{"status":409,"error":"Notification already sent — cannot retry"}` |
+| Retry pending notification (idempotent) | POST /notifications/{id}/retry | 200 | Notification with status PENDING |
 
 The dispatch failure case is intentional: the notification WAS created. The client gets a 201 with status FAILED rather than a 500 that hides the created resource.
 
@@ -513,6 +520,8 @@ src/main/java/io/backend/notifications/
 │   ├── RegisterRequest.java
 │   ├── UserRequest.java
 │   └── UserResponse.java
+├── event/
+│   └── NotificationCreatedEvent.java    # Async dispatch event
 ├── enums/
 │   ├── Channel.java                     # EMAIL, SMS, PUSH
 │   └── Status.java                      # PENDING, SENT, FAILED

@@ -1,5 +1,6 @@
 package io.backend.notifications.integration.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import io.backend.notifications.dto.NotificationRequest;
@@ -7,6 +8,7 @@ import io.backend.notifications.dto.NotificationUpdateRequest;
 import io.backend.notifications.entity.Notification;
 import io.backend.notifications.enums.Channel;
 import io.backend.notifications.enums.Status;
+import io.backend.notifications.fixture.entity.NotificationBuilder;
 import io.backend.notifications.fixture.entity.UserBuilder;
 import io.backend.notifications.fixture.wiremock.WireMockHelper;
 import io.backend.notifications.integration.base.AbstractIntegrationTest;
@@ -1311,5 +1313,301 @@ class NotificationControllerIntegrationTest extends AbstractIntegrationTest {
               Notification n = notificationRepository.findById(notificationId).orElseThrow();
               return n.getStatus() == Status.FAILED;
             });
+  }
+
+  // ──── Retry: POST /notifications/{id}/retry ────
+
+  @Test
+  void shouldRetryFailedNotificationAndReturnPending() {
+    UserBuilder builder = UserBuilder.aUser();
+    String token = registerAndLogin(builder);
+
+    // Create PUSH notification without device token → will eventually be FAILED
+    NotificationRequest request =
+        new NotificationRequest("Retry Test", "Will fail then retry", Channel.PUSH, List.of());
+
+    webTestClient()
+        .post()
+        .uri("/notifications")
+        .header("Authorization", "Bearer " + token)
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(request)
+        .exchange()
+        .expectStatus()
+        .isCreated()
+        .expectBody()
+        .jsonPath("$.status")
+        .isEqualTo("PENDING");
+
+    var user = userRepository.findByEmail(builder.getEmail()).orElseThrow();
+    var notifications = notificationRepository.findAllByUserId(user.getId());
+    Long notificationId = notifications.get(0).getId();
+
+    // Wait for async dispatch to fail (PUSH without device token)
+    await()
+        .atMost(10, TimeUnit.SECONDS)
+        .until(
+            () -> {
+              Notification n = notificationRepository.findById(notificationId).orElseThrow();
+              return n.getStatus() == Status.FAILED;
+            });
+
+    // Retry the FAILED notification
+    webTestClient()
+        .post()
+        .uri("/notifications/{id}/retry", notificationId)
+        .header("Authorization", "Bearer " + token)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody()
+        .jsonPath("$.status")
+        .isEqualTo("PENDING");
+
+    // Verify DB status was reset to PENDING
+    Notification retried = notificationRepository.findById(notificationId).orElseThrow();
+    assertThat(retried.getStatus()).isEqualTo(Status.PENDING);
+  }
+
+  @Test
+  void shouldReturn404WhenRetryingNonExistentNotification() {
+    UserBuilder builder = UserBuilder.aUser();
+    String token = registerAndLogin(builder);
+
+    webTestClient()
+        .post()
+        .uri("/notifications/{id}/retry", 99999L)
+        .header("Authorization", "Bearer " + token)
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+  }
+
+  @Test
+  void shouldReturn403WhenRetryingAnotherUsersNotification() {
+    UserBuilder builderA = UserBuilder.aUser();
+    String tokenA = registerAndLogin(builderA);
+
+    UserBuilder builderB = UserBuilder.aUser();
+    String tokenB = registerAndLogin(builderB);
+
+    // User B creates PUSH notification without device token
+    NotificationRequest req =
+        new NotificationRequest("B's notification", "Secret", Channel.PUSH, List.of());
+    webTestClient()
+        .post()
+        .uri("/notifications")
+        .header("Authorization", "Bearer " + tokenB)
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(req)
+        .exchange()
+        .expectStatus()
+        .isCreated();
+
+    var userB = userRepository.findByEmail(builderB.getEmail()).orElseThrow();
+    var notifications = notificationRepository.findAllByUserId(userB.getId());
+    Long notificationId = notifications.get(0).getId();
+
+    // Wait for FAILED (PUSH without device token)
+    await()
+        .atMost(10, TimeUnit.SECONDS)
+        .until(
+            () -> {
+              Notification n = notificationRepository.findById(notificationId).orElseThrow();
+              return n.getStatus() == Status.FAILED;
+            });
+
+    // User A tries to retry User B's FAILED notification
+    webTestClient()
+        .post()
+        .uri("/notifications/{id}/retry", notificationId)
+        .header("Authorization", "Bearer " + tokenA)
+        .exchange()
+        .expectStatus()
+        .isForbidden();
+  }
+
+  @Test
+  void shouldReturn401WhenRetryingWithoutToken() {
+    webTestClient()
+        .post()
+        .uri("/notifications/{id}/retry", 1L)
+        .exchange()
+        .expectStatus()
+        .isUnauthorized();
+  }
+
+  @Test
+  void shouldReturn200IdempotentlyWhenRetryingPendingNotification() {
+    UserBuilder builder = UserBuilder.aUser();
+    String token = registerAndLogin(builder);
+
+    var user = userRepository.findByEmail(builder.getEmail()).orElseThrow();
+    Notification notification =
+        NotificationBuilder.aNotification()
+            .withUser(user)
+            .withStatus(Status.PENDING)
+            .withChannel(Channel.EMAIL)
+            .build();
+    notification = notificationRepository.save(notification);
+
+    webTestClient()
+        .post()
+        .uri("/notifications/{id}/retry", notification.getId())
+        .header("Authorization", "Bearer " + token)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody()
+        .jsonPath("$.status")
+        .isEqualTo("PENDING");
+  }
+
+  @Test
+  void shouldReturn409WhenRetryingSentNotification() {
+    UserBuilder builder = UserBuilder.aUser();
+    String token = registerAndLogin(builder);
+
+    // Create EMAIL notification — async dispatcher sends it to SENT quickly
+    NotificationRequest request =
+        new NotificationRequest("Sent notification", "Already sent", Channel.EMAIL, List.of());
+    webTestClient()
+        .post()
+        .uri("/notifications")
+        .header("Authorization", "Bearer " + token)
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(request)
+        .exchange()
+        .expectStatus()
+        .isCreated();
+
+    var user = userRepository.findByEmail(builder.getEmail()).orElseThrow();
+    var notifications = notificationRepository.findAllByUserId(user.getId());
+    Long notificationId = notifications.get(0).getId();
+
+    // Wait for SENT
+    await()
+        .atMost(5, TimeUnit.SECONDS)
+        .until(
+            () -> {
+              Notification n = notificationRepository.findById(notificationId).orElseThrow();
+              return n.getStatus() == Status.SENT;
+            });
+
+    // Retry a SENT notification → 409
+    webTestClient()
+        .post()
+        .uri("/notifications/{id}/retry", notificationId)
+        .header("Authorization", "Bearer " + token)
+        .exchange()
+        .expectStatus()
+        .isEqualTo(409);
+  }
+
+  // ──── Idempotent rapid retries ────
+
+  @Test
+  void shouldReturn200ForBothRapidRetriesOnFailedNotification() {
+    UserBuilder builder = UserBuilder.aUser(); // no device token
+    String token = registerAndLogin(builder);
+
+    var user = userRepository.findByEmail(builder.getEmail()).orElseThrow();
+    Notification notification =
+        NotificationBuilder.aNotification()
+            .withUser(user)
+            .withStatus(Status.FAILED)
+            .withChannel(Channel.PUSH)
+            .build();
+    notification = notificationRepository.save(notification);
+
+    // First retry — FAILED → PENDING
+    webTestClient()
+        .post()
+        .uri("/notifications/{id}/retry", notification.getId())
+        .header("Authorization", "Bearer " + token)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody()
+        .jsonPath("$.status")
+        .isEqualTo("PENDING");
+
+    // Second rapid retry — idempotent, both return 200 per spec.
+    // By the time this executes, async dispatch may have failed again (PUSH without token)
+    // turning status back to FAILED. Retry then resets FAILED→PENDING again → 200 OK.
+    webTestClient()
+        .post()
+        .uri("/notifications/{id}/retry", notification.getId())
+        .header("Authorization", "Bearer " + token)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody()
+        .jsonPath("$.status")
+        .isEqualTo("PENDING");
+  }
+
+  // ──── Full retry → async re-fail cycle ────
+
+  @Test
+  void shouldTransitionToFailedAfterRetryWhenAsyncDispatchFails() {
+    UserBuilder builder = UserBuilder.aUser(); // no device token
+    String token = registerAndLogin(builder);
+
+    // Create PUSH notification without device token → async dispatch will fail
+    NotificationRequest request =
+        new NotificationRequest(
+            "Retry Fail Cycle", "Will fail async after retry", Channel.PUSH, List.of());
+
+    webTestClient()
+        .post()
+        .uri("/notifications")
+        .header("Authorization", "Bearer " + token)
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(request)
+        .exchange()
+        .expectStatus()
+        .isCreated()
+        .expectBody()
+        .jsonPath("$.status")
+        .isEqualTo("PENDING");
+
+    var user = userRepository.findByEmail(builder.getEmail()).orElseThrow();
+    var notifications = notificationRepository.findAllByUserId(user.getId());
+    Long notificationId = notifications.get(0).getId();
+
+    // Wait for async dispatch to fail (PUSH without device token)
+    await()
+        .atMost(10, TimeUnit.SECONDS)
+        .until(
+            () -> {
+              Notification n = notificationRepository.findById(notificationId).orElseThrow();
+              return n.getStatus() == Status.FAILED;
+            });
+
+    // Retry the FAILED notification
+    webTestClient()
+        .post()
+        .uri("/notifications/{id}/retry", notificationId)
+        .header("Authorization", "Bearer " + token)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody()
+        .jsonPath("$.status")
+        .isEqualTo("PENDING");
+
+    // Async listener dispatches again and fails again (PUSH without device token)
+    await()
+        .atMost(10, TimeUnit.SECONDS)
+        .until(
+            () -> {
+              Notification n = notificationRepository.findById(notificationId).orElseThrow();
+              return n.getStatus() == Status.FAILED;
+            });
+
+    // Verify it is indeed FAILED after the re-attempt
+    Notification failedAgain = notificationRepository.findById(notificationId).orElseThrow();
+    assertThat(failedAgain.getStatus()).isEqualTo(Status.FAILED);
   }
 }
