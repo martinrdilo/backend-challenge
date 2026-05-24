@@ -28,10 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RFC 7807 Problem Details error format (`application/problem+json`) for all error responses
 - Bucket4j rate limiting on `POST /auth/login` (5/min) and `POST /auth/register` (3/min) per IP
 - Paginated notification search with JPA Specifications (filter by status, channel, date range, text)
-- Dev seed data via `CommandLineRunner` — 2 users + 5 notifications, idempotent, `@Profile("!test")`
+- Dev seed data via `CommandLineRunner` — 2 users + 5 notifications, idempotent, `\@Profile("!test")`
 - Spring Retry with exponential backoff on `ChannelDispatcher.dispatch()` (3 attempts, 1s/2s/4s)
-- Async event-driven dispatch — `POST /notifications` returns `PENDING` immediately, `@Async` listener handles delivery
-- `@ConfigurationPropertiesScan` for type-safe configuration binding
+- Async event-driven dispatch — `POST /notifications` returns `PENDING` immediately, `\@Async` listener handles delivery
+- `\@ConfigurationPropertiesScan` for type-safe configuration binding
 - Awaitility for async integration test assertions
 
 ### Fixed
